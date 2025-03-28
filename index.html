@@ -21,14 +21,33 @@
     .message {
       font-size: 48px;
       font-weight: bold;
+      opacity: 0;
+      transform: scale(0);
+      transition: all 1s ease;
+    }
+
+    .show-message {
+      opacity: 1;
+      transform: scale(1);
     }
   </style>
 </head>
 <body>
 
-  <div class="message">
+  <div class="message" id="message">
     In Progress...
   </div>
+
+  <script>
+    window.onload = function() {
+      const message = document.getElementById("message");
+      
+      // Sayfa yüklendikten sonra animasyonu başlat
+      setTimeout(() => {
+        message.classList.add("show-message");
+      }, 100);
+    }
+  </script>
 
 </body>
 </html>
