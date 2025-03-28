@@ -1,53 +1,54 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>In Progress...</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      margin: 0;
-      padding: 0;
-      background-color: #808080; /* Gri arka plan */
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-      color: white;
-      text-align: center;
-    }
+import React, { useState } from 'react';
 
-    .message {
-      font-size: 48px;
-      font-weight: bold;
-      opacity: 0;
-      transform: scale(0);
-      transition: all 1s ease;
-    }
+function App() {
+  const [theme, setTheme] = useState({
+    backgroundColor: "#fff",
+    textColor: "#333",
+    accentColor: "#ff6347",
+  });
 
-    .show-message {
-      opacity: 1;
-      transform: scale(1);
-    }
-  </style>
-</head>
-<body>
+  const toggleTheme = () => {
+    setTheme(prevTheme => ({
+      backgroundColor: prevTheme.backgroundColor === "#fff" ? "#333" : "#fff",
+      textColor: prevTheme.textColor === "#333" ? "#fff" : "#333",
+      accentColor: prevTheme.accentColor === "#ff6347" ? "#1e90ff" : "#ff6347",
+    }));
+  };
 
-  <div class="message" id="message">
-    In Progress...
-  </div>
+  return (
+    <div style={{ backgroundColor: theme.backgroundColor, color: theme.textColor, minHeight: "100vh", padding: "20px" }}>
+      <header>
+        <h1 style={{ textAlign: "center" }}>Burak's React Page</h1>
+        <button 
+          style={{
+            backgroundColor: theme.accentColor, 
+            color: "#fff", 
+            padding: "10px 20px", 
+            border: "none", 
+            borderRadius: "5px", 
+            cursor: "pointer", 
+            marginBottom: "20px",
+            display: "block", 
+            marginLeft: "auto", 
+            marginRight: "auto"
+          }}
+          onClick={toggleTheme}
+        >
+          Toggle Theme
+        </button>
+      </header>
 
-  <script>
-    window.onload = function() {
-      const message = document.getElementById("message");
-      
-      // Sayfa yüklendikten sonra animasyonu başlat
-      setTimeout(() => {
-        message.classList.add("show-message");
-      }, 100);
-    }
-  </script>
+      <section>
+        <h2>Welcome to my website!</h2>
+        <p>This page is styled based on a theme toggle. Click the button above to change the theme.</p>
+        <p>This is a simple React app that changes colors dynamically!</p>
+      </section>
 
-</body>
-</html>
+      <footer style={{ textAlign: "center", marginTop: "30px" }}>
+        <p>Built with ❤️ by Burak</p>
+      </footer>
+    </div>
+  );
+}
+
+export default App;
