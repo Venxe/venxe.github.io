@@ -1,0 +1,37 @@
+/* src/components/InProgress/InProgress.css */
+.in-progress {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  background-color: #f5f5f5;
+  margin: 0;
+}
+
+.in-progress__content {
+  text-align: center;
+}
+
+.in-progress__title {
+  font-size: 2.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.in-progress__subtitle {
+  font-size: 1.2rem;
+  margin-bottom: 2rem;
+  color: #555;
+}
+
+.in-progress__spinner {
+  width: 3rem;
+  height: 3rem;
+  border: 0.4rem solid #ccc;
+  border-top-color: #007acc;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
