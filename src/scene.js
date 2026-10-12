@@ -7,11 +7,10 @@ import { createSteam } from './steam.js';
 import { SETTINGS } from './config.js';
 
 export function createScene(container) {
-  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
-  renderer.setClearColor(0x000000, 0);
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.12;
+  renderer.toneMappingExposure = 1;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.shadowMap.autoUpdate = false;
@@ -22,6 +21,8 @@ export function createScene(container) {
   renderer.domElement.setAttribute('aria-describedby', 'scene-help');
   container.append(renderer.domElement);
   const scene = new THREE.Scene();
+  scene.background = new THREE.Color(getComputedStyle(container).getPropertyValue('--background').trim());
+  scene.fog = new THREE.Fog(scene.background, 12, 32);
   const camera = new THREE.PerspectiveCamera(SETTINGS.fieldOfView, 1, 0.1, 60);
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enablePan = false;
@@ -32,32 +33,29 @@ export function createScene(container) {
   controls.minPolarAngle = SETTINGS.minPolarAngle;
   controls.maxPolarAngle = SETTINGS.maxPolarAngle;
   controls.minDistance = SETTINGS.minSceneDistance;
-  controls.target.fromArray(SETTINGS.sceneTarget);
 
   const environment = new RoomEnvironment();
   const generator = new THREE.PMREMGenerator(renderer);
   const environmentMap = generator.fromScene(environment, 0.04);
   scene.environment = environmentMap.texture;
-  scene.environmentIntensity = 0.42;
+  scene.environmentIntensity = 0.35;
   environment.dispose();
   generator.dispose();
-  const mainLight = new THREE.DirectionalLight('#ffdfb6', 3.2);
+  const mainLight = new THREE.DirectionalLight('#ffdfbf', 2.4);
   mainLight.position.set(-3, 7, 5);
   mainLight.castShadow = true;
   mainLight.shadow.mapSize.set(1024, 1024);
-  Object.assign(mainLight.shadow.camera, { left: -5, right: 5, top: 5, bottom: -5, near: 0.5, far: 18 });
-  mainLight.shadow.normalBias = 0.035;
-  mainLight.shadow.bias = -0.0003;
-  scene.add(mainLight);
-  const fill = new THREE.DirectionalLight('#b8d3e7', 1.25);
+  mainLight.shadow.normalBias = 0.015;
+  mainLight.shadow.bias = -0.00015;
+  scene.add(mainLight, mainLight.target);
+  const fill = new THREE.DirectionalLight('#b7c9ef', 0.65);
   fill.position.set(4, 3, 1);
   scene.add(fill);
-  const rim = new THREE.DirectionalLight('#dbeac4', 2.3);
+  const rim = new THREE.DirectionalLight('#bcccf1', 1.4);
   rim.position.set(0, 5, -4);
   scene.add(rim);
-  scene.add(new THREE.HemisphereLight('#d5dfcc', '#25241e', 0.55));
 
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.ShadowMaterial({ opacity: 0.22 }));
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.MeshStandardMaterial({ color: '#1c222d', roughness: 1 }));
   floor.rotation.x = -Math.PI / 2;
   floor.receiveShadow = true;
   scene.add(floor);
@@ -72,15 +70,48 @@ export function createScene(container) {
   const pointer = new THREE.Vector2();
   const hits = [];
   const selectableObjects = [laptop.group, coffee.group, floor];
-  const initialDirection = new THREE.Vector3(4.6, 3.5, 7.8).normalize();
+  const initialDirection = new THREE.Vector3(3.8, 4.2, 8).normalize();
+  const modelBounds = new THREE.Box3().setFromObject(laptop.group).union(new THREE.Box3().setFromObject(coffee.group));
+  const homeTarget = modelBounds.getCenter(new THREE.Vector3());
+  const corners = [];
+  for (const x of [modelBounds.min.x, modelBounds.max.x]) {
+    for (const y of [modelBounds.min.y, modelBounds.max.y]) {
+      for (const z of [modelBounds.min.z, modelBounds.max.z]) corners.push(new THREE.Vector3(x, y, z));
+    }
+  }
+  const orientation = new THREE.Matrix4().lookAt(initialDirection, new THREE.Vector3(), camera.up);
+  const viewRight = new THREE.Vector3().setFromMatrixColumn(orientation, 0);
+  const viewUp = new THREE.Vector3().setFromMatrixColumn(orientation, 1);
+  const offsets = corners.map((corner) => corner.clone().sub(homeTarget));
   const screenCenter = laptop.screen.getWorldPosition(new THREE.Vector3());
   const screenNormal = laptop.screen.getWorldDirection(new THREE.Vector3());
+  const screenLight = new THREE.PointLight('#b9caff', 0.3, 3, 2);
+  screenLight.position.copy(laptop.screen.localToWorld(new THREE.Vector3(0, -0.55, 0.2)));
+  scene.add(screenLight);
+
+  // Include each corner's projected ground shadow when fitting the static map.
+  mainLight.target.position.copy(homeTarget);
+  scene.updateMatrixWorld(true);
+  mainLight.shadow.updateMatrices(mainLight);
+  const shadowBounds = new THREE.Box3();
+  const lightDirection = homeTarget.clone().sub(mainLight.position).normalize();
+  for (const corner of corners) {
+    shadowBounds.expandByPoint(corner.clone().applyMatrix4(mainLight.shadow.camera.matrixWorldInverse));
+    const ground = corner.clone().addScaledVector(lightDirection, -corner.y / lightDirection.y);
+    shadowBounds.expandByPoint(ground.applyMatrix4(mainLight.shadow.camera.matrixWorldInverse));
+  }
+  Object.assign(mainLight.shadow.camera, {
+    left: shadowBounds.min.x - 0.35, right: shadowBounds.max.x + 0.35,
+    bottom: shadowBounds.min.y - 0.35, top: shadowBounds.max.y + 0.35,
+    near: Math.max(0.1, -shadowBounds.max.z - 0.5), far: -shadowBounds.min.z + 0.5,
+  });
+  mainLight.shadow.camera.updateProjectionMatrix();
   const gl = renderer.getContext();
   const maxPointSize = gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE)[1];
   let homeDistance = 9;
 
   function homePose() {
-    const target = new THREE.Vector3().fromArray(SETTINGS.sceneTarget);
+    const target = homeTarget.clone();
     return { target, position: target.clone().addScaledVector(initialDirection, homeDistance) };
   }
   function focusPose() {
@@ -94,9 +125,14 @@ export function createScene(container) {
     renderer.setPixelRatio(pixelRatio);
     renderer.setSize(Math.max(1, width), Math.max(1, height), false);
     camera.aspect = Math.max(1, width) / Math.max(1, height);
-    camera.updateProjectionMatrix();
-    homeDistance = Math.max(8.8, 3.55 / (Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.aspect));
+    const verticalFov = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+    const horizontalFov = verticalFov * camera.aspect;
+    // Leave 15% breathing room in both axes, including narrow portrait screens.
+    homeDistance = Math.max(SETTINGS.minSceneDistance / SETTINGS.focusEnterRatio + 0.1, ...offsets.map((offset) =>
+      offset.dot(initialDirection) + Math.max(Math.abs(offset.dot(viewRight)) / horizontalFov, Math.abs(offset.dot(viewUp)) / verticalFov) / 0.85));
     controls.maxDistance = homeDistance * 1.8;
+    camera.far = Math.max(60, controls.maxDistance + 30);
+    camera.updateProjectionMatrix();
     steam.resize(height, pixelRatio, camera, maxPointSize);
   }
   function screenAt(clientX, clientY) {
@@ -128,11 +164,13 @@ export function createScene(container) {
     for (const material of materials) material.dispose();
     for (const texture of textures) texture.dispose();
     mainLight.shadow.dispose();
+    screenLight.dispose();
     environmentMap.dispose();
     renderer.dispose();
     renderer.domElement.remove();
   }
   resize();
+  controls.target.copy(homeTarget);
   camera.position.copy(homePose().position);
   controls.update();
   renderer.shadowMap.needsUpdate = true;

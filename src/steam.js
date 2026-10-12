@@ -25,16 +25,16 @@ export function createSteam(origin) {
       varying float opacity;
       varying float phase;
       void main() {
-        float life = fract(seed.x + time * (0.105 + seed.y * 0.035));
-        float sway = time * 0.65 + seed.z * 6.283;
+        float life = fract(seed.x + time * (0.09 + seed.y * 0.025));
+        float sway = time * 0.4 + seed.z * 6.283;
         vec3 p = position;
-        p.x = (seed.y - 0.5) * 0.19 + sin(life * 5.0 + sway) * life * 0.15;
-        p.z = (seed.z - 0.5) * 0.16 + cos(life * 4.0 + sway) * life * 0.10;
+        p.x = (seed.y - 0.5) * 0.14 + sin(life * 5.0 + sway) * life * 0.10;
+        p.z = (seed.z - 0.5) * 0.12 + cos(life * 4.0 + sway) * life * 0.07;
         p.y = life * height;
         vec4 view = modelViewMatrix * vec4(p, 1.0);
         gl_Position = projectionMatrix * view;
-        gl_PointSize = min(maxPointSize, (0.13 + life * 0.48) * pixelScale / max(0.1, -view.z));
-        opacity = smoothstep(0.0, 0.16, life) * (1.0 - smoothstep(0.45, 1.0, life)) * 0.11;
+        gl_PointSize = min(maxPointSize, (0.10 + life * 0.35) * pixelScale / max(0.1, -view.z));
+        opacity = smoothstep(0.0, 0.18, life) * (1.0 - smoothstep(0.4, 1.0, life)) * 0.07;
         phase = seed.z * 6.283 + life * 3.0;
       }
     `,
@@ -48,7 +48,7 @@ export function createSteam(origin) {
         float radius = length(uv * vec2(1.25, 0.88));
         float soft = 1.0 - smoothstep(0.08, 0.48, radius);
         float wisps = 0.7 + 0.3 * sin(uv.x * 16.0 + sin(uv.y * 12.0 + phase));
-        gl_FragColor = vec4(0.77, 0.82, 0.74, soft * wisps * opacity);
+        gl_FragColor = vec4(0.76, 0.79, 0.85, soft * wisps * opacity);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
       }

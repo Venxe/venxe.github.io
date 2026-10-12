@@ -4,7 +4,7 @@ import { SETTINGS } from './config.js';
 export function createCoffee() {
   const group = new THREE.Group();
   group.position.fromArray(SETTINGS.cupPosition);
-  const ceramic = new THREE.MeshStandardMaterial({ color: '#e6ddc7', roughness: 0.22, metalness: 0.03 });
+  const ceramic = new THREE.MeshStandardMaterial({ color: '#eadfcd', roughness: 0.25 });
   const profile = [
     [0, 0.065], [0.28, 0.065], [0.32, 0.085], [0.36, 0.16],
     [0.405, 0.45], [0.44, 0.84], [0.444, 0.87], [0.435, 0.885],
@@ -25,7 +25,7 @@ export function createCoffee() {
   saucer.castShadow = true;
   saucer.receiveShadow = true;
   group.add(saucer);
-  const coffee = new THREE.Mesh(new THREE.CircleGeometry(0.392, 64), new THREE.MeshStandardMaterial({ color: '#25140c', roughness: 0.17, metalness: 0.1 }));
+  const coffee = new THREE.Mesh(new THREE.CircleGeometry(0.392, 64), new THREE.MeshStandardMaterial({ color: '#241409', roughness: 0.2 }));
   coffee.rotation.x = -Math.PI / 2;
   coffee.position.y = 0.813;
   group.add(coffee);

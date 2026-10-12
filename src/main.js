@@ -5,7 +5,7 @@ import { SETTINGS } from './config.js';
 export function start(showError) {
   const container = document.querySelector('#scene');
   const app = createScene(container);
-  const { renderer, scene, camera, controls, laptop, steam } = app;
+  const { renderer, scene, camera, controls, steam } = app;
   const canvas = renderer.domElement;
   const hint = document.querySelector('#hint');
   const announcement = document.querySelector('#announcement');
@@ -21,11 +21,9 @@ export function start(showError) {
   let focused = false;
   let transition = null;
   let previousPose = null;
-  let selectedAction = null;
   let lastDistance = controls.getDistance();
   let focusDistance = initialFocusPose.position.distanceTo(initialFocusPose.target);
   let enterDistance = initialHomePose.position.distanceTo(initialHomePose.target) * SETTINGS.focusEnterRatio;
-  let theme = 0;
   let elapsed = 0;
   let previousTime = null;
   let contextLost = false;
@@ -91,40 +89,22 @@ export function start(showError) {
     clearDamping();
     touchedCamera = true;
     focused = true;
-    selectedAction = null;
     hint.textContent = 'Uzaklaşarak geri dön';
-    laptop.drawScreen(theme, true);
     updateControls();
     moveTo(app.focusPose());
-    announce('Laptop ekranı odaklandı. Sağ ve sol oklarla Tema veya Geri öğesini seçin; Enter ile çalıştırın. Uzaklaşarak veya Escape ile sahneye dönün.');
+    announce('Boş laptop masaüstü odaklandı. Uzaklaşarak veya Escape ile sahneye dönün.');
   }
   function leaveLaptop() {
     if (!focused || contextLost) return;
     if (!transition) clearDamping();
     focused = false;
-    selectedAction = null;
     hint.textContent = 'Sürükle · Yaklaş · Ekrana tıkla';
-    laptop.drawScreen(theme, false);
     updateControls();
     moveTo(returnPose());
     announce('Önceki sahne görünümüne dönüldü.');
   }
-  function selectAction(action) {
-    if (selectedAction === action) return;
-    selectedAction = action;
-    laptop.drawScreen(theme, focused, selectedAction);
-  }
-  function runAction(action) {
-    if (action === 'back') leaveLaptop();
-    else if (action === 'theme') {
-      theme = 1 - theme;
-      laptop.drawScreen(theme, true, selectedAction);
-      announce(theme ? 'Gün batımı teması açıldı.' : 'Sessiz saatler teması açıldı.');
-    }
-  }
-  function screenActionAt(x, y) {
-    const uv = app.screenAt(x, y);
-    return focused ? laptop.actionAt(uv) : uv ? 'open' : null;
+  function canOpenScreenAt(x, y) {
+    return !focused && app.screenAt(x, y) !== null;
   }
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && focused) {
@@ -134,19 +114,9 @@ export function start(showError) {
   }, listenerOptions);
   canvas.addEventListener('keydown', (event) => {
     if (transition || contextLost) return;
-    if (focused && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
-      event.preventDefault();
-      selectAction(event.key === 'ArrowLeft' ? 'theme' : 'back');
-      announce(selectedAction === 'theme' ? 'Tema seçildi. Enter ile değiştirin.' : 'Geri seçildi. Enter ile sahneye dönün.');
-      return;
-    }
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
-      if (focused) runAction(selectedAction || 'theme');
-      else {
-        openLaptop();
-        selectAction('theme');
-      }
+      if (!focused) openLaptop();
       return;
     }
     if (focused && event.key.startsWith('Arrow')) return;
@@ -173,7 +143,7 @@ export function start(showError) {
     if (transition || contextLost || event.button !== 0) return;
     pointers.set(event.pointerId, {
       x: event.clientX, y: event.clientY, moved: false,
-      action: screenActionAt(event.clientX, event.clientY),
+      screen: canOpenScreenAt(event.clientX, event.clientY),
     });
     if (pointers.size > 1) for (const pointer of pointers.values()) pointer.moved = true;
   }, listenerOptions);
@@ -181,9 +151,7 @@ export function start(showError) {
     const pointer = pointers.get(event.pointerId);
     if (pointer && Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y) > SETTINGS.dragThreshold) pointer.moved = true;
     if (!transition && !contextLost && event.pointerType === 'mouse' && pointers.size === 0) {
-      const action = screenActionAt(event.clientX, event.clientY);
-      if (focused) selectAction(action);
-      canvas.style.cursor = action ? 'pointer' : focused ? 'default' : 'grab';
+      canvas.style.cursor = canOpenScreenAt(event.clientX, event.clientY) ? 'pointer' : focused ? 'default' : 'grab';
     }
   }, listenerOptions);
   canvas.addEventListener('pointerup', (event) => {
@@ -191,21 +159,15 @@ export function start(showError) {
     pointers.delete(event.pointerId);
     if (!pointer || pointer.moved || transition || contextLost) return;
     if (Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y) > SETTINGS.dragThreshold) return;
-    const action = screenActionAt(event.clientX, event.clientY);
-    if (!action || action !== pointer.action) return;
+    if (!pointer.screen || !canOpenScreenAt(event.clientX, event.clientY)) return;
     canvas.focus({ preventScroll: true });
-    if (action === 'open') openLaptop();
-    else {
-      selectAction(action);
-      runAction(action);
-    }
+    openLaptop();
   }, listenerOptions);
   for (const event of ['pointercancel', 'lostpointercapture']) {
     canvas.addEventListener(event, (pointerEvent) => pointers.delete(pointerEvent.pointerId), listenerOptions);
   }
   canvas.addEventListener('pointerleave', () => {
     canvas.style.cursor = focused ? 'default' : 'grab';
-    if (focused) selectAction(null);
   }, listenerOptions);
   function frame(time) {
     if (contextLost || disposed || document.hidden) return;
@@ -232,6 +194,8 @@ export function start(showError) {
       else rememberCamera();
     }
     if (!reducedMotion.matches) steam.update(elapsed);
+    scene.fog.near = controls.getDistance() + 6;
+    scene.fog.far = scene.fog.near + 20;
     renderer.render(scene, camera);
   }
   const observer = new ResizeObserver(() => {

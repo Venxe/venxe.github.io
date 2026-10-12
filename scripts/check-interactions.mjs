@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
+import { readFile } from 'node:fs/promises';
+
+const background = (await readFile(new URL('../styles.css', import.meta.url), 'utf8')).match(/--background:\s*([^;]+)/)[1];
 
 // Replace only browser/GPU boundaries. All application modules and OrbitControls run unchanged.
 const threeUrl = new URL('../vendor/three/build/three.module.min.js', import.meta.url).href;
@@ -53,10 +56,11 @@ function setup(width, height, reduceMotion = true) {
   Object.assign(elements.get('scene'), { append() {}, getBoundingClientRect: canvas.getBoundingClientRect });
   document.querySelector = (selector) => elements.get(selector.slice(1)) || null;
   globalThis.document = document;
-  globalThis.window = Object.assign(new EventTarget(), { devicePixelRatio: 1 });
+  globalThis.window = Object.assign(new EventTarget(), { devicePixelRatio: 3 });
   const window = globalThis.window;
   const preference = Object.assign(new EventTarget(), { matches: reduceMotion });
   globalThis.matchMedia = () => preference;
+  globalThis.getComputedStyle = () => ({ getPropertyValue: () => background });
   let resizeCallback;
   globalThis.ResizeObserver = class {
     constructor(callback) { resizeCallback = callback; }
@@ -66,7 +70,7 @@ function setup(width, height, reduceMotion = true) {
   const renderer = {
     domElement: canvas, shadowMap: {}, loop: null,
     setClearColor(color, alpha) { this.clearAlpha = alpha; },
-    setPixelRatio() {}, setSize() {}, dispose() {},
+    setPixelRatio(ratio) { this.pixelRatio = ratio; }, setSize() {}, dispose() { this.disposed = true; },
     getContext: () => ({ ALIASED_POINT_SIZE_RANGE: 0, getParameter: () => [1, 128] }),
     setAnimationLoop(loop) { this.loop = loop; },
     render(scene, camera) {
@@ -133,10 +137,29 @@ function centeredScreen(test) {
 
 for (const [width, height] of [[1440, 900], [390, 844], [844, 390], [320, 568]]) {
   const test = setup(width, height);
-  assert.equal(test.renderer.options.alpha, true, 'The canvas must be transparent');
-  assert.equal(test.renderer.clearAlpha, 0);
-  assert.equal(test.renderer.scene.background, null, 'CSS must provide the background');
-  assert.ok(test.renderer.scene.children.some((object) => object.material?.isShadowMaterial), 'The floor must only draw shadows');
+  assert.equal(test.renderer.options.alpha, false, 'The studio canvas must be opaque');
+  assert.equal(test.renderer.pixelRatio, 1.5, 'High-DPI devices must respect the pixel ratio budget');
+  assert.equal(test.renderer.scene.background.getHexString(), new THREE.Color(background).getHexString(), 'Scene and CSS must share the backdrop color');
+  const floor = test.renderer.scene.children.find((object) => object.geometry?.parameters?.width === 200);
+  assert.ok(floor?.material.isMeshStandardMaterial && floor.receiveShadow, 'The matte floor must receive shadows');
+  const lights = test.renderer.scene.children.filter((object) => object.isLight);
+  assert.equal(lights.filter((light) => light.castShadow).length, 1, 'Only the key light may generate a shadow map');
+  assert.ok(lights.some((light) => light.isPointLight && light.distance > 0 && !light.castShadow), 'The screen light must have limited range and no shadows');
+  for (const group of test.renderer.scene.children.filter((object) => object.isGroup)) {
+    const bounds = new THREE.Box3().setFromObject(group);
+    for (const x of [bounds.min.x, bounds.max.x]) {
+      for (const y of [bounds.min.y, bounds.max.y]) {
+        for (const z of [bounds.min.z, bounds.max.z]) {
+          const point = new THREE.Vector3(x, y, z).project(test.camera);
+          assert.ok(Math.abs(point.x) <= 0.851 && Math.abs(point.y) <= 0.851 && point.z > -1 && point.z < 1, 'The initial camera must frame both models with breathing room');
+        }
+      }
+    }
+  }
+  const texture = test.screen.material.map;
+  const textureVersion = texture.version;
+  let textureDisposals = 0;
+  texture.addEventListener('dispose', () => textureDisposals++);
   test.key('ArrowLeft');
   test.tick();
   let position;
@@ -154,9 +177,6 @@ for (const [width, height] of [[1440, 900], [390, 844], [844, 390], [320, 568]])
     const center = test.screen.getWorldPosition(new THREE.Vector3());
     assert.ok(Math.abs(test.camera.position.distanceTo(center) - 3.7) < 1e-8, 'OrbitControls must not push the focused camera out to the free-view minimum');
   }
-  const [left, top] = test.screenPoint(356 / 1200, 1 - 504 / 720);
-  const [right, bottom] = test.screenPoint(588 / 1200, 1 - 696 / 720);
-  assert.ok(right - left >= 44 && bottom - top >= 44, 'Focused actions must have usable touch areas');
   assert.equal(test.document.activeElement, undefined, 'Automatic focus must not steal keyboard focus');
   test.wheel(120);
   test.tick();
@@ -171,20 +191,21 @@ for (const [width, height] of [[1440, 900], [390, 844], [844, 390], [320, 568]])
 
   test.click(0.5, 0.5);
   assert.equal(test.focused, true, 'Clicking the screen must focus it');
-  test.click(472 / 1200, 1 - 600 / 720);
-  assert.match(test.elements.get('announcement').textContent, /Gün batımı/);
-  test.click(0.5, 0.5);
-  assert.equal(test.focused, true, 'Blank screen clicks must do nothing');
-  test.click(728 / 1200, 1 - 600 / 720);
-  samePose(test, position, rotation);
-  test.key('Enter');
+  const announcement = test.elements.get('announcement').textContent;
+  const focusedPosition = test.camera.position.clone();
+  for (const [u, v] of [[0.5, 0.5], [472 / 1200, 1 - 600 / 720], [728 / 1200, 1 - 600 / 720]]) test.click(u, v);
   test.key('ArrowLeft');
-  test.key(' ');
-  assert.match(test.elements.get('announcement').textContent, /Sessiz saatler/);
   test.key('ArrowRight');
   test.key('Enter');
+  test.key(' ');
+  test.tick();
+  assert.equal(test.focused, true, 'Blank desktop clicks and keys must not exit focus');
+  assert.equal(test.elements.get('announcement').textContent, announcement, 'Blank desktop input must not run hidden actions');
+  assert.ok(test.camera.position.distanceTo(focusedPosition) < 1e-8, 'Blank desktop input must not move the camera');
+  send(test.document, 'keydown', { key: 'Escape' });
   samePose(test, position, rotation);
   test.key('Enter');
+  assert.equal(test.focused, true, 'Enter must still focus the screen');
   send(test.document, 'keydown', { key: 'Escape' });
   samePose(test, position, rotation);
   test.pinch(1.25);
@@ -192,7 +213,11 @@ for (const [width, height] of [[1440, 900], [390, 844], [844, 390], [320, 568]])
   test.pinch(0.8);
   assert.equal(test.focused, false, 'A pinch outward must return to free view');
   samePose(test, position, rotation);
+  assert.equal(texture.version, textureVersion, 'The empty desktop texture must not be uploaded again during interactions');
+  assert.ok(test.renderer.scene.fog.near > test.camera.position.distanceTo(test.screen.getWorldPosition(new THREE.Vector3())), 'Fog must start behind the models');
   test.close();
+  assert.equal(textureDisposals, 1, 'The desktop texture must be disposed exactly once');
+  assert.equal(test.renderer.disposed, true, 'Leaving the page must release the renderer');
 }
 
 const animated = setup(1440, 900, false);
@@ -239,10 +264,22 @@ assert.equal(animated.focused, true, 'Inward zoom must focus even when resize pl
 animated.preference.matches = true;
 send(animated.preference, 'change');
 centeredScreen(animated);
+const steam = animated.renderer.scene.children.find((object) => object.isPoints);
+assert.equal(steam.visible, false, 'Reduced motion must hide the steam');
+const steamTime = steam.material.uniforms.time.value;
+animated.tick(10);
+assert.equal(steam.material.uniforms.time.value, steamTime, 'Reduced motion must stop updating the steam');
+animated.document.hidden = true;
+send(animated.document, 'visibilitychange');
+assert.equal(animated.renderer.loop, null, 'A hidden tab must stop the animation loop');
+animated.document.hidden = false;
+send(animated.document, 'visibilitychange');
+assert.equal(typeof animated.renderer.loop, 'function', 'A visible tab must resume the animation loop');
+animated.tick();
 send(animated.canvas, 'webglcontextlost');
 assert.equal(animated.errors.length, 1);
 assert.equal(animated.renderer.loop, null, 'Context loss must stop rendering');
 animated.close();
 
-console.log('PASS: transparent scene, screen picking, wheel/pinch and keyboard input, saved camera poses, gestures, resize, transitions, and context loss.');
+console.log('PASS: studio framing, floor/light budget, blank desktop, screen picking, wheel/pinch and keyboard input, saved camera poses, gestures, resize, transitions, and context loss.');
 console.log('NOT CHECKED: browser event ordering, GPU shaders/pixels, screen-reader output, or FPS.');

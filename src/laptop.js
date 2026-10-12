@@ -1,13 +1,14 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { SETTINGS } from './config.js';
+import { createScreenTexture } from './screen.js';
 
 export function createLaptop() {
   const group = new THREE.Group();
   group.position.fromArray(SETTINGS.laptopPosition);
-  const metal = new THREE.MeshStandardMaterial({ color: '#737c78', metalness: 0.82, roughness: 0.3 });
-  const dark = new THREE.MeshStandardMaterial({ color: '#111613', roughness: 0.65 });
-  const keyMaterial = new THREE.MeshStandardMaterial({ color: '#202923', roughness: 0.58, metalness: 0.15 });
+  const metal = new THREE.MeshStandardMaterial({ color: '#89919e', metalness: 0.85, roughness: 0.34 });
+  const dark = new THREE.MeshStandardMaterial({ color: '#11151d', roughness: 0.68 });
+  const keyMaterial = new THREE.MeshStandardMaterial({ color: '#202630', roughness: 0.6 });
   function rounded(width, height, depth, radius, material, parent, x, y, z) {
     const mesh = new THREE.Mesh(new RoundedBoxGeometry(width, height, depth, 2, radius), material);
     mesh.position.set(x, y, z);
@@ -26,7 +27,7 @@ export function createLaptop() {
   labels.width = 1300;
   labels.height = 550;
   const labelContext = labels.getContext('2d');
-  labelContext.fillStyle = '#a4afa6';
+  labelContext.fillStyle = '#aab5c8';
   labelContext.textAlign = 'center';
   labelContext.textBaseline = 'middle';
   labelContext.font = '21px Consolas, monospace';
@@ -50,7 +51,7 @@ export function createLaptop() {
   labelPlane.position.set(0, 0.126, -0.32);
   group.add(labelPlane);
 
-  rounded(1.2, 0.01, 0.64, 0.005, new THREE.MeshStandardMaterial({ color: '#414b46', metalness: 0.7, roughness: 0.42 }), group, 0, 0.083, 0.65);
+  rounded(1.2, 0.01, 0.64, 0.005, new THREE.MeshStandardMaterial({ color: '#454d5b', metalness: 0.7, roughness: 0.42 }), group, 0, 0.083, 0.65);
   rounded(1.16, 0.012, 0.6, 0.005, metal, group, 0, 0.086, 0.65);
   rounded(0.65, 0.014, 0.055, 0.007, dark, group, 0, 0.078, 1.177);
 
@@ -65,89 +66,20 @@ export function createLaptop() {
   rounded(3.6, 2.25, 0.105, 0.05, metal, lid, 0, 1.115, 0);
   rounded(3.48, 2.12, 0.012, 0.006, dark, lid, 0, 1.15, 0.057);
 
-  const screenCanvas = document.createElement('canvas');
-  screenCanvas.width = 1200;
-  screenCanvas.height = 720;
-  const context = screenCanvas.getContext('2d');
-  const texture = new THREE.CanvasTexture(screenCanvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  const screen = new THREE.Mesh(new THREE.PlaneGeometry(3.29, 1.974), new THREE.MeshBasicMaterial({ map: texture, toneMapped: false }));
+  const texture = createScreenTexture();
+  // Display pixels stay independent of warm studio lights and specular hotspots.
+  const screen = new THREE.Mesh(new THREE.PlaneGeometry(3.29, 1.974), new THREE.MeshBasicMaterial({
+    map: texture, toneMapped: false, fog: false,
+  }));
   screen.position.set(0, 1.16, 0.066);
   lid.add(screen);
-  const webcam = new THREE.Mesh(new THREE.CircleGeometry(0.012, 12), new THREE.MeshBasicMaterial({ color: '#40564e' }));
+  const webcam = new THREE.Mesh(new THREE.CircleGeometry(0.012, 12), new THREE.MeshBasicMaterial({ color: '#35465c' }));
   webcam.position.set(0, 2.19, 0.067);
   lid.add(webcam);
-  const badge = new THREE.Mesh(new THREE.RingGeometry(0.085, 0.1, 32), new THREE.MeshStandardMaterial({ color: '#b5c2b5', metalness: 0.85, roughness: 0.25 }));
+  const badge = new THREE.Mesh(new THREE.RingGeometry(0.085, 0.1, 32), new THREE.MeshStandardMaterial({ color: '#b5bfce', metalness: 0.85, roughness: 0.3 }));
   badge.rotation.y = Math.PI;
   badge.position.set(0, 1.18, -0.055);
   lid.add(badge);
 
-  const actions = [
-    { id: 'theme', label: 'Tema', symbol: '◐', x: 356 },
-    { id: 'back', label: 'Geri', symbol: '↙', x: 612 },
-  ];
-  const actionY = 504;
-  const actionWidth = 232;
-  const actionHeight = 192;
-  let screenActive = false;
-
-  function actionAt(uv) {
-    if (!screenActive || !uv || !Number.isFinite(uv.x) || !Number.isFinite(uv.y)) return null;
-    const x = uv.x * screenCanvas.width;
-    const y = (1 - uv.y) * screenCanvas.height;
-    if (y < actionY || y >= actionY + actionHeight) return null;
-    return actions.find((action) => x >= action.x && x < action.x + actionWidth)?.id || null;
-  }
-
-  function drawScreen(theme = 0, active = false, selectedAction = null) {
-    screenActive = active;
-    context.textAlign = 'left';
-    context.textBaseline = 'alphabetic';
-    const warm = theme === 1;
-    const gradient = context.createLinearGradient(0, 0, 900, 720);
-    gradient.addColorStop(0, warm ? '#482d38' : '#142c28');
-    gradient.addColorStop(1, warm ? '#ac7049' : '#567660');
-    context.fillStyle = gradient;
-    context.fillRect(0, 0, 1200, 720);
-    context.fillStyle = warm ? '#d6a373' : '#afc9a0';
-    context.beginPath();
-    context.arc(915, 240, 95, 0, Math.PI * 2);
-    context.fill();
-    const hills = warm ? ['#855b50', '#61433f', '#392f35'] : ['#547b68', '#38594c', '#203c35'];
-    for (let i = 0; i < 3; i++) {
-      context.fillStyle = hills[i];
-      context.beginPath();
-      context.moveTo(0, 510 + i * 52);
-      context.bezierCurveTo(350, 150 + i * 95, 720, 790 - i * 60, 1200, 310 + i * 125);
-      context.lineTo(1200, 720);
-      context.lineTo(0, 720);
-      context.fill();
-    }
-    context.fillStyle = '#e4e8dc';
-    context.font = 'bold 17px monospace';
-    context.fillText('venxe.', 28, 28);
-    if (active) {
-      context.textAlign = 'center';
-      context.textBaseline = 'middle';
-      for (const action of actions) {
-        context.fillStyle = '#0c1b18bb';
-        context.beginPath();
-        context.roundRect(action.x, actionY, actionWidth, actionHeight, 24);
-        context.fill();
-        if (action.id === selectedAction) {
-          context.strokeStyle = '#d7ebaa';
-          context.lineWidth = 4;
-          context.stroke();
-        }
-        context.fillStyle = '#eaf0dc';
-        context.font = '54px "Segoe UI Symbol", Arial, sans-serif';
-        context.fillText(action.symbol, action.x + actionWidth / 2, actionY + 74);
-        context.font = '26px "Segoe UI", Arial, sans-serif';
-        context.fillText(action.label, action.x + actionWidth / 2, actionY + 151);
-      }
-    }
-    texture.needsUpdate = true;
-  }
-  drawScreen();
-  return { group, screen, drawScreen, actionAt };
+  return { group, screen };
 }

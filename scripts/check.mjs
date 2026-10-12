@@ -8,6 +8,7 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const html = await readFile(resolve(root, 'index.html'), 'utf8');
 const importMap = JSON.parse(html.match(/<script type="importmap">([\s\S]*?)<\/script>/)[1]).imports;
 const visited = new Set();
+const siteBases = ['https://pages.test/', 'https://pages.test/portfolio/'];
 async function checkModule(path) {
   if (visited.has(path)) return;
   visited.add(path);
@@ -17,17 +18,26 @@ async function checkModule(path) {
   const imports = [...source.matchAll(/(?:\bfrom\s*|\bimport\s*\(\s*)['"]([^'"]+)['"]/g)];
   for (const [, specifier] of imports) {
     let target;
+    let browserSpecifier = specifier;
     if (specifier.startsWith('.')) target = resolve(dirname(path), specifier);
     else {
       const key = Object.keys(importMap).find((key) => key === specifier || (key.endsWith('/') && specifier.startsWith(key)));
       assert.ok(key, `Unmapped import: ${specifier} in ${relative(root, path)}`);
-      target = resolve(root, importMap[key] + specifier.slice(key.length));
+      browserSpecifier = importMap[key] + specifier.slice(key.length);
+      target = resolve(root, browserSpecifier);
+    }
+    for (const base of siteBases) {
+      const source = specifier.startsWith('.') ? new URL(relative(root, path).replaceAll('\\', '/'), base) : base;
+      const url = new URL(browserSpecifier, source);
+      assert.ok(url.href.startsWith(base), `Import escapes the site base: ${specifier}`);
+      assert.equal(decodeURIComponent(url.pathname.slice(new URL(base).pathname.length)), relative(root, target).replaceAll('\\', '/'), 'Browser and filesystem import resolution must agree');
     }
     await checkModule(target);
   }
 }
 for (const [, path] of html.matchAll(/(?:src|href)="(\.\/[^"#]*)"/g)) {
   assert.ok((await stat(resolve(root, path))).isFile() || path === './', `Missing asset: ${path}`);
+  for (const base of siteBases) assert.ok(new URL(path, base).href.startsWith(base), `Asset escapes the site base: ${path}`);
 }
 await checkModule(resolve(root, 'src/boot.js'));
 for (const file of await readdir(resolve(root, 'scripts'))) {
@@ -40,4 +50,4 @@ assert.ok(!/https?:\/\//.test(JSON.stringify(importMap)), 'Dependencies must be 
 assert.equal(new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1])).size, [...html.matchAll(/\bid="([^"]+)"/g)].length, 'Duplicate element IDs');
 await stat(resolve(root, '.nojekyll'));
 console.log(`PASS: ${visited.size} JavaScript modules parse and all transitive imports resolve locally.`);
-console.log('PASS: HTML assets, unique IDs, redirect removal, and GitHub Pages marker.');
+console.log('PASS: HTML assets, unique IDs, redirect removal, GitHub Pages marker, and root/subdirectory URL resolution.');
