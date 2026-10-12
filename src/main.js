@@ -68,7 +68,7 @@ export function start(showError) {
     // Take the short arc around the scene instead of a line through the laptop.
     toOrbit.theta = fromOrbit.theta + Math.atan2(Math.sin(toOrbit.theta - fromOrbit.theta), Math.cos(toOrbit.theta - fromOrbit.theta));
     transition = {
-      from: { position: camera.position.clone(), target: controls.target.clone() },
+      from: { target: controls.target.clone() },
       to: pose,
       fromOrbit,
       toOrbit,

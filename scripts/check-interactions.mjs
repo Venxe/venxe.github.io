@@ -69,7 +69,6 @@ function setup(width, height, reduceMotion = true) {
   };
   const renderer = {
     domElement: canvas, shadowMap: {}, loop: null,
-    setClearColor(color, alpha) { this.clearAlpha = alpha; },
     setPixelRatio(ratio) { this.pixelRatio = ratio; }, setSize() {}, dispose() { this.disposed = true; },
     getContext: () => ({ ALIASED_POINT_SIZE_RANGE: 0, getParameter: () => [1, 128] }),
     setAnimationLoop(loop) { this.loop = loop; },

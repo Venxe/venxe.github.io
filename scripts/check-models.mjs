@@ -11,12 +11,10 @@ registerHooks({
 });
 
 // Model construction needs a 2D canvas. Pixel output is deliberately not tested here.
-const drawnText = [];
 const drawnLabels = [];
 const context = new Proxy({}, { get: (_, key) => {
   if (key === 'createLinearGradient') return () => ({ addColorStop() {} });
   if (key === 'fillText') return (text, x, y) => {
-    drawnText.push(text);
     drawnLabels.push({ text, x, y });
   };
   return () => {};
@@ -97,8 +95,8 @@ for (const u of [0.01, 0.5, 0.99]) {
     assert.ok(hit.uv.distanceTo(new THREE.Vector2(u, v)) < 1e-6, 'Screen UVs must remain usable for future desktop interactions');
   }
 }
-assert.ok(drawnText.includes('venxe'), 'The screen must draw the desktop brand');
-assert.equal(drawnText.length, labelledKeys.length + 1, 'Only keyboard legends and the desktop brand may be drawn');
+assert.ok(drawnLabels.some(({ text }) => text === 'venxe'), 'The screen must draw the desktop brand');
+assert.equal(drawnLabels.length, labelledKeys.length + 1, 'Only keyboard legends and the desktop brand may be drawn');
 const texture = laptop.screen.material.map;
 assert.equal(texture.image.width, 1200);
 assert.equal(texture.image.height, 720);

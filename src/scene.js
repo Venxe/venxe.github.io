@@ -14,7 +14,6 @@ export function createScene(container) {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.shadowMap.autoUpdate = false;
-  renderer.shadowMap.needsUpdate = true;
   renderer.domElement.tabIndex = 0;
   renderer.domElement.setAttribute('role', 'application');
   renderer.domElement.setAttribute('aria-label', 'Interactive 3D workspace');
@@ -176,5 +175,5 @@ export function createScene(container) {
   camera.position.copy(homePose().position);
   controls.update();
   renderer.shadowMap.needsUpdate = true;
-  return { renderer, scene, camera, controls, laptop, steam, homePose, focusPose, resize, screenAt, dispose };
+  return { renderer, scene, camera, controls, steam, homePose, focusPose, resize, screenAt, dispose };
 }
