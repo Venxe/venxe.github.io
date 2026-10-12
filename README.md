@@ -44,13 +44,17 @@ React, animasyon kütüphanesi, CDN, backend, harici font, model veya görsel se
 
 WebGL2, ES modülleri ve import map destekleyen güncel tarayıcı gerekir. Sahnede ACES ton eşleme, sRGB renk yönetimi, tek gölge üreten ana ışık ve başlangıçta üretilen bir ortam haritası kullanılır. Tekrarlanan tuşlar `InstancedMesh` ile çizilir.
 
+Klavye altı sıralı kompakt QWERTY yerleşiminde 78 tuştan oluşur: kısa F1–F12 sırası, geniş Tab/Caps/Shift/Backspace/Enter tuşları, tek uzun space ve ters T yön tuşları. Tuş boyutları ve etiket konumları aynı yerleşimden hesaplanır; farklı genişlikler için ek mesh veya çizim çağrısı oluşturulmaz.
+
+Laptopun ince gövdesinde klavye genişliği gövdenin yaklaşık %91'ini, ekran genişliği kapağın yaklaşık %96'sını kaplar. Ekran dokusunun oranı korunur; odak mesafesi ekranın gerçek boyutlarından hesaplanarak en yakın zoom sınırında da ekranın tamamı görünür tutulur. Daha geniş trackpad ve ince menteşe profili bu oranları tamamlar. Arka kapaktaki yuvarlak rozette, favicon ile aynı V silüetini kullanan küçük bir `ShapeGeometry` logo bulunur; ek görsel, font veya bağımlılık yüklenmez.
+
 Canvas tüm ekranı kaplar ve opaktır. Three.js arkaplan rengini CSS `--background` değerinden alır. Mat zemin ışık ve gölge alır; kamera uzaklığıyla güncellenen hafif sis, nesnelerin arkasında başlayarak zemini arkaplana karıştırır. Başlangıç kamerası 35° görüş açısıyla iki modelin sınırlarını her iki eksende %15 boşlukla kadrajlar. Gölge haritası 1024² boyutundadır ve nesnelerin zemine düşen gölgelerini de kapsar. Sayfanın görünür HTML arayüzü küçük logo ve tek satırlık ipucundan oluşur.
 
 Ekran, sahne ışıklarından ve yansımalardan etkilenmeyen `MeshBasicMaterial` ile soğuk mavi tonlu masaüstü dokusunu gösterir; kısa menzilli, gölge üretmeyen bir PointLight klavyeyi hafifçe aydınlatır. Üst çubukta yalnız venxe markası bulunur. Ekran etkileşimleri için `screenAt()` öndeki görünür ekranın normalize UV koordinatlarını döndürmeye devam eder. Gelecekteki kısayollar bu koordinatları doku piksellerine (`x = u × genişlik`, `y = (1 − v) × yükseklik`) dönüştürerek eklenebilir. Şimdilik kısayol veya pencere altyapısı bulunmaz; doku odak, hover veya animasyon sırasında yeniden yüklenmez. Post-processing kullanılmaz.
 
 Piksel oranı 1,5 ile sınırlıdır. Sabit modellerin gölgesi başlangıçta hesaplanır. Buharda kare başına parçacık nesnesi oluşturulmaz. Sekme görünmezken animasyon döngüsü durur. İşletim sisteminde azaltılmış hareket tercih edildiğinde buhar gizlenir, kamera geçişleri anında uygulanır ve sönümleme kapanır. Sayfadan çıkarken geometri, materyal, doku ve olay dinleyicileri temizlenir.
 
-Model sayımı: **13.308 üçgen / 19 mesh**. Bu sayı zemin, buhar, gölge geçişleri ve ortam haritası üretimini kapsamaz; GPU draw-call veya FPS ölçümü değildir. Hedefler: normal karede 80 çizim çağrısının ve 100 bin üçgenin altında kalmak, temsilî masaüstünde 60 FPS ve mobilde en az 30 FPS.
+Model sayımı: **14.717 üçgen / 20 mesh**. Bu sayı zemin, buhar, gölge geçişleri ve ortam haritası üretimini kapsamaz; GPU draw-call veya FPS ölçümü değildir. Hedefler: normal karede 80 çizim çağrısının ve 100 bin üçgenin altında kalmak, temsilî masaüstünde 60 FPS ve mobilde en az 30 FPS.
 
 ## Doğrulama
 
@@ -63,9 +67,10 @@ Kontroller:
 - Uygulama ve vendored bağımlılıkların JavaScript sözdizimi, tüm geçişli import yolları ve kök/alt dizin URL çözümlemesi.
 - HTML varlıkları, benzersiz element kimlikleri, eski yönlendirmenin kaldırılması ve `.nojekyll`.
 - Gerçek Three.js geometrilerinde sonlu koordinatlar ve model bütçesi.
+- Geniş özel tuşlar ve space, F1–F12 sırası, tuşların çakışmaması ve etiketlerin tuş merkezlerine hizalanması.
 - Gerçek `Raycaster` ile ekranın önden seçilmesi, arka kapağın ve öndeki nesnenin tıklamayı engellemesi.
 - Masaüstü dokusu, gelecekteki etkileşimler için ekran UV koordinatları ve modellerin zemin teması.
-- Dört ekran oranında iki modelin başlangıç kadrajına sığması, mat zemin ve tek gölge ışığı bütçesi.
+- Dört ekran oranında iki modelin başlangıç kadrajına ve büyütülen ekranın en yakın odak zoom sınırına sığması, mat zemin ve tek gölge ışığı bütçesi.
 - Boş ekrana ve eski kart bölgelerine tıklamanın işlem yapmaması; odakta Enter/boşluk/ok tuşlarının etkisiz kalması ve ekran dokusunun tekrar yüklenmemesi.
 - Gerçek uygulama modülleri ve `OrbitControls` ile tekerlek, pinch, ekran tıklamaları, klavye, önceki kamera görünümüne dönüş, sürükleme/iptal, yeniden boyutlandırma, geçişler ve grafik bağlantısı kaybı.
 - Yüksek DPI'da piksel oranı sınırı, azaltılmış harekette buharın durması, gizli sekmede döngünün durması ve çıkışta ekran dokusunun temizlenmesi.

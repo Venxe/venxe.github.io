@@ -116,7 +116,9 @@ export function createScene(container) {
   }
   function focusPose() {
     const halfFov = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
-    const distance = Math.max(3.7, 1.85 / (halfFov * camera.aspect));
+    const { width, height } = laptop.screen.geometry.parameters;
+    // Fit the enlarged screen even at the closest allowed focused zoom.
+    const distance = Math.max(3.7, width / (2 * halfFov * camera.aspect * SETTINGS.focusMinRatio), height / (2 * halfFov * SETTINGS.focusMinRatio));
     return { target: screenCenter.clone(), position: screenCenter.clone().addScaledVector(screenNormal, distance) };
   }
   function resize() {

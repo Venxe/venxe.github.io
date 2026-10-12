@@ -89,14 +89,12 @@ function setup(width, height, reduceMotion = true) {
   const wheel = (deltaY) => send(canvas, 'wheel', { deltaY, deltaMode: 0, clientX: width / 2, clientY: height / 2 });
   const pointer = (type, x, y, id = 1, pointerType = 'mouse') => send(canvas, type, { clientX: x, clientY: y, pageX: x, pageY: y, pointerId: id, pointerType, button: 0 });
   tick();
-  let screen;
-  renderer.scene.traverse((object) => {
-    if (object.geometry?.parameters?.width === 3.29) screen = object;
-  });
+  const screen = renderer.scene.getObjectByName('laptop-screen');
   assert.ok(screen, 'The rendered scene must contain the laptop screen');
   const screenPoint = (u, v) => {
     renderer.camera.updateMatrixWorld();
-    const point = screen.localToWorld(new THREE.Vector3((u - 0.5) * 3.29, (v - 0.5) * 1.974, 0)).project(renderer.camera);
+    const { width: screenWidth, height: screenHeight } = screen.geometry.parameters;
+    const point = screen.localToWorld(new THREE.Vector3((u - 0.5) * screenWidth, (v - 0.5) * screenHeight, 0)).project(renderer.camera);
     return [(point.x + 1) * width / 2, (1 - point.y) * height / 2];
   };
   const click = (u, v) => {
@@ -129,10 +127,18 @@ function samePose(test, position, rotation) {
 }
 
 function centeredScreen(test) {
+  test.camera.updateMatrixWorld();
   const point = test.screen.getWorldPosition(new THREE.Vector3()).project(test.camera);
   assert.ok(Math.abs(point.x) < 1e-8 && Math.abs(point.y) < 1e-8, 'Focus must center the laptop screen');
   const normal = test.screen.getWorldDirection(new THREE.Vector3());
   assert.ok(test.camera.getWorldDirection(new THREE.Vector3()).dot(normal) < -0.999999, 'Focus must face the screen');
+  const { width, height } = test.screen.geometry.parameters;
+  for (const x of [-width / 2, width / 2]) {
+    for (const y of [-height / 2, height / 2]) {
+      const corner = test.screen.localToWorld(new THREE.Vector3(x, y, 0)).project(test.camera);
+      assert.ok(Math.abs(corner.x) <= 1.001 && Math.abs(corner.y) <= 1.001, 'The enlarged screen must fit the focused viewport');
+    }
+  }
 }
 
 for (const [width, height] of [[1440, 900], [390, 844], [844, 390], [320, 568]]) {
@@ -175,7 +181,7 @@ for (const [width, height] of [[1440, 900], [390, 844], [844, 390], [320, 568]])
   const focusPosition = test.camera.position.clone();
   if (width >= height) {
     const center = test.screen.getWorldPosition(new THREE.Vector3());
-    assert.ok(Math.abs(test.camera.position.distanceTo(center) - 3.7) < 1e-8, 'OrbitControls must not push the focused camera out to the free-view minimum');
+    assert.ok(test.camera.position.distanceTo(center) < 5, 'OrbitControls must not push the focused camera out to the free-view minimum');
   }
   assert.equal(test.document.activeElement, undefined, 'Automatic focus must not steal keyboard focus');
   test.wheel(120);
@@ -215,6 +221,15 @@ for (const [width, height] of [[1440, 900], [390, 844], [844, 390], [320, 568]])
   samePose(test, position, rotation);
   assert.equal(texture.version, textureVersion, 'The empty desktop texture must not be uploaded again during interactions');
   assert.ok(test.renderer.scene.fog.near > test.camera.position.distanceTo(test.screen.getWorldPosition(new THREE.Vector3())), 'Fog must start behind the models');
+  test.key('Enter');
+  test.tick();
+  for (let i = 0; i < 6; i++) {
+    test.key('+');
+    test.tick();
+  }
+  centeredScreen(test);
+  send(test.document, 'keydown', { key: 'Escape' });
+  samePose(test, position, rotation);
   test.close();
   assert.equal(textureDisposals, 1, 'The desktop texture must be disposed exactly once');
   assert.equal(test.renderer.disposed, true, 'Leaving the page must release the renderer');

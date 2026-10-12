@@ -11,6 +11,6 @@ export const SETTINGS = Object.freeze({
   dragThreshold: 6,
   steamCount: 40,
   steamHeight: 1.3,
-  laptopPosition: [-0.65, 0.0955, 0],
+  laptopPosition: [-0.65, 0.0755, 0],
   cupPosition: [1.95, 0.003, 0.05],
 });
