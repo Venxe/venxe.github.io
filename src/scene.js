@@ -17,7 +17,7 @@ export function createScene(container) {
   renderer.shadowMap.needsUpdate = true;
   renderer.domElement.tabIndex = 0;
   renderer.domElement.setAttribute('role', 'application');
-  renderer.domElement.setAttribute('aria-label', 'Etkileşimli 3D çalışma alanı');
+  renderer.domElement.setAttribute('aria-label', 'Interactive 3D workspace');
   renderer.domElement.setAttribute('aria-describedby', 'scene-help');
   container.append(renderer.domElement);
   const scene = new THREE.Scene();

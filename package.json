@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "A buildless Three.js workspace for GitHub Pages.",
+  "description": "An interactive 3D developer portfolio prototype built with Three.js for GitHub Pages.",
   "scripts": {
     "dev": "node scripts/serve.mjs",
     "check": "node scripts/check.mjs && node scripts/check-models.mjs && node scripts/check-interactions.mjs"

@@ -89,19 +89,19 @@ export function start(showError) {
     clearDamping();
     touchedCamera = true;
     focused = true;
-    hint.textContent = 'Uzaklaşarak geri dön';
+    hint.textContent = 'Zoom out to return';
     updateControls();
     moveTo(app.focusPose());
-    announce('Boş laptop masaüstü odaklandı. Uzaklaşarak veya Escape ile sahneye dönün.');
+    announce('The empty laptop desktop is now in focus. Zoom out or press Escape to return to the scene.');
   }
   function leaveLaptop() {
     if (!focused || contextLost) return;
     if (!transition) clearDamping();
     focused = false;
-    hint.textContent = 'Sürükle · Yaklaş · Ekrana tıkla';
+    hint.textContent = 'Drag · Zoom · Select screen';
     updateControls();
     moveTo(returnPose());
-    announce('Önceki sahne görünümüne dönüldü.');
+    announce('Returned to the previous scene view.');
   }
   function canOpenScreenAt(x, y) {
     return !focused && app.screenAt(x, y) !== null;
@@ -234,7 +234,7 @@ export function start(showError) {
     event.preventDefault();
     contextLost = true;
     renderer.setAnimationLoop(null);
-    showError('Grafik bağlantısı kesildi. Sahneyi yeniden yükleyerek devam edebilirsiniz.');
+    showError('Graphics rendering was interrupted. Reload the scene to continue.');
   }, listenerOptions);
   window.addEventListener('pagehide', (event) => {
     renderer.setAnimationLoop(null);

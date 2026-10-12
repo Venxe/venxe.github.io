@@ -115,7 +115,7 @@ function setup(width, height, reduceMotion = true) {
   };
   return { renderer, screen, elements, document, canvas, preference, errors, tick, key, wheel, pointer, click, pinch, screenPoint,
     get camera() { return renderer.camera; },
-    get focused() { return elements.get('hint').textContent === 'Uzaklaşarak geri dön'; },
+    get focused() { return elements.get('hint').textContent === 'Zoom out to return'; },
     resize(w, h) { width = w; height = h; resizeCallback(); },
     close() { send(window, 'pagehide', { persisted: false }); },
   };

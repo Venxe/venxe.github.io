@@ -98,7 +98,7 @@ for (const u of [0.01, 0.5, 0.99]) {
   }
 }
 assert.ok(drawnText.includes('venxe'), 'The screen must draw the desktop brand');
-assert.ok(!drawnText.includes('Tema') && !drawnText.includes('Geri'), 'The desktop must not draw the previous action cards');
+assert.equal(drawnText.length, labelledKeys.length + 1, 'Only keyboard legends and the desktop brand may be drawn');
 const texture = laptop.screen.material.map;
 assert.equal(texture.image.width, 1200);
 assert.equal(texture.image.height, 720);

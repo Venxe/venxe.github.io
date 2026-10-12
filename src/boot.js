@@ -14,6 +14,6 @@ try {
   const { start } = await import('./main.js');
   start(showError);
 } catch (error) {
-  console.error('Sahne başlatılamadı:', error);
-  showError('3D sahne yüklenemedi. WebGL2 desteğini ve tarayıcınızın donanım hızlandırma ayarını kontrol edip yeniden deneyin.');
+  console.error('Unable to initialize the 3D scene:', error);
+  showError('Unable to load the 3D scene. Verify that your browser supports WebGL2 and that hardware acceleration is enabled, then try again.');
 }
