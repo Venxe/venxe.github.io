@@ -7,8 +7,8 @@ import { createSteam } from './steam.js';
 import { SETTINGS } from './config.js';
 
 export function createScene(container) {
-  const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-  renderer.setClearColor(SETTINGS.background);
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+  renderer.setClearColor(0x000000, 0);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.12;
@@ -17,11 +17,11 @@ export function createScene(container) {
   renderer.shadowMap.autoUpdate = false;
   renderer.shadowMap.needsUpdate = true;
   renderer.domElement.tabIndex = 0;
-  renderer.domElement.setAttribute('role', 'img');
-  renderer.domElement.setAttribute('aria-label', '3D çalışma alanı. Sürükleyerek döndürün, kaydırarak yaklaşın. Klavyeyle ok tuşları ve artı eksi tuşlarını kullanın; laptopu Enter ile açın.');
+  renderer.domElement.setAttribute('role', 'application');
+  renderer.domElement.setAttribute('aria-label', 'Etkileşimli 3D çalışma alanı');
+  renderer.domElement.setAttribute('aria-describedby', 'scene-help');
   container.append(renderer.domElement);
   const scene = new THREE.Scene();
-  scene.fog = new THREE.Fog(SETTINGS.background, 12, 30);
   const camera = new THREE.PerspectiveCamera(SETTINGS.fieldOfView, 1, 0.1, 60);
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enablePan = false;
@@ -31,7 +31,7 @@ export function createScene(container) {
   controls.zoomSpeed = 0.8;
   controls.minPolarAngle = SETTINGS.minPolarAngle;
   controls.maxPolarAngle = SETTINGS.maxPolarAngle;
-  controls.minDistance = 5;
+  controls.minDistance = SETTINGS.minSceneDistance;
   controls.target.fromArray(SETTINGS.sceneTarget);
 
   const environment = new RoomEnvironment();
@@ -57,7 +57,7 @@ export function createScene(container) {
   scene.add(rim);
   scene.add(new THREE.HemisphereLight('#d5dfcc', '#25241e', 0.55));
 
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.MeshStandardMaterial({ color: '#161b17', roughness: 0.92 }));
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.ShadowMaterial({ opacity: 0.22 }));
   floor.rotation.x = -Math.PI / 2;
   floor.receiveShadow = true;
   scene.add(floor);
@@ -93,7 +93,7 @@ export function createScene(container) {
     const pixelRatio = Math.min(window.devicePixelRatio || 1, SETTINGS.maxPixelRatio);
     renderer.setPixelRatio(pixelRatio);
     renderer.setSize(Math.max(1, width), Math.max(1, height), false);
-    camera.aspect = width / Math.max(1, height);
+    camera.aspect = Math.max(1, width) / Math.max(1, height);
     camera.updateProjectionMatrix();
     homeDistance = Math.max(8.8, 3.55 / (Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.aspect));
     controls.maxDistance = homeDistance * 1.8;
@@ -101,11 +101,13 @@ export function createScene(container) {
   }
   function screenAt(clientX, clientY) {
     const bounds = renderer.domElement.getBoundingClientRect();
+    if (bounds.width <= 0 || bounds.height <= 0) return null;
     pointer.set(((clientX - bounds.left) / bounds.width) * 2 - 1, -((clientY - bounds.top) / bounds.height) * 2 + 1);
+    camera.updateMatrixWorld();
     raycaster.setFromCamera(pointer, camera);
     hits.length = 0;
     raycaster.intersectObjects(selectableObjects, true, hits);
-    return hits[0]?.object === laptop.screen;
+    return hits[0]?.object === laptop.screen ? hits[0].uv : null;
   }
   function dispose() {
     renderer.setAnimationLoop(null);

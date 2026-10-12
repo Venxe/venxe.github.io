@@ -7,11 +7,7 @@ export function start(showError) {
   const app = createScene(container);
   const { renderer, scene, camera, controls, laptop, steam } = app;
   const canvas = renderer.domElement;
-  const openButton = document.querySelector('#open');
-  const resetButton = document.querySelector('#reset');
-  const backButton = document.querySelector('#back');
-  const themeButton = document.querySelector('#theme');
-  const panel = document.querySelector('#focus-panel');
+  const hint = document.querySelector('#hint');
   const announcement = document.querySelector('#announcement');
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const events = new AbortController();
@@ -19,10 +15,16 @@ export function start(showError) {
   const pointers = new Map();
   const motionOffset = new THREE.Vector3();
   const motionSpherical = new THREE.Spherical();
+  const lastFreePose = { position: camera.position.clone(), target: controls.target.clone() };
+  const initialFocusPose = app.focusPose();
+  const initialHomePose = app.homePose();
   let focused = false;
   let transition = null;
   let previousPose = null;
-  let returnFocus = openButton;
+  let selectedAction = null;
+  let lastDistance = controls.getDistance();
+  let focusDistance = initialFocusPose.position.distanceTo(initialFocusPose.target);
+  let enterDistance = initialHomePose.position.distanceTo(initialHomePose.target) * SETTINGS.focusEnterRatio;
   let theme = 0;
   let elapsed = 0;
   let previousTime = null;
@@ -36,13 +38,31 @@ export function start(showError) {
     controls.target.copy(pose.target);
     camera.lookAt(pose.target);
   }
+  function rememberCamera() {
+    lastDistance = controls.getDistance();
+    if (!focused) {
+      lastFreePose.position.copy(camera.position);
+      lastFreePose.target.copy(controls.target);
+    }
+  }
+  function updateControls() {
+    controls.enableRotate = !focused;
+    controls.minDistance = focused ? focusDistance * SETTINGS.focusMinRatio : SETTINGS.minSceneDistance;
+    controls.enableDamping = !reducedMotion.matches;
+  }
+  function returnPose() {
+    const pose = previousPose || app.homePose();
+    const offset = pose.position.clone().sub(pose.target).clampLength(SETTINGS.minSceneDistance, controls.maxDistance);
+    return { target: pose.target.clone(), position: pose.target.clone().add(offset) };
+  }
   function finishTransition() {
     if (!transition) return;
     applyPose(transition.to);
     transition = null;
-    controls.enabled = !focused;
-    controls.enableDamping = !reducedMotion.matches;
-    if (!focused) controls.update();
+    controls.enabled = true;
+    updateControls();
+    controls.update();
+    rememberCamera();
   }
   function moveTo(pose) {
     const fromOrbit = new THREE.Spherical().setFromVector3(camera.position.clone().sub(controls.target));
@@ -57,51 +77,55 @@ export function start(showError) {
       started: elapsed,
     };
     controls.enabled = false;
+    pointers.clear();
+    canvas.style.cursor = focused ? 'default' : 'grab';
     if (reducedMotion.matches) finishTransition();
   }
   function clearDamping() {
     controls.enableDamping = false;
     controls.update();
   }
-  function openLaptop() {
+  function openLaptop(pose = { position: camera.position, target: controls.target }) {
     if (focused || transition || contextLost) return;
+    previousPose = { position: pose.position.clone(), target: pose.target.clone() };
     clearDamping();
-    previousPose = { position: camera.position.clone(), target: controls.target.clone() };
-    returnFocus = document.activeElement === canvas ? canvas : openButton;
+    touchedCamera = true;
     focused = true;
-    document.body.classList.add('focused');
-    panel.hidden = false;
-    openButton.disabled = true;
+    selectedAction = null;
+    hint.textContent = 'Uzaklaşarak geri dön';
     laptop.drawScreen(theme, true);
-    app.resize();
+    updateControls();
     moveTo(app.focusPose());
-    themeButton.focus({ preventScroll: true });
-    announce('Laptop açıldı. Ekran temasını değiştirebilir veya Escape ile sahneye dönebilirsiniz.');
+    announce('Laptop ekranı odaklandı. Sağ ve sol oklarla Tema veya Geri öğesini seçin; Enter ile çalıştırın. Uzaklaşarak veya Escape ile sahneye dönün.');
   }
-  function leaveLaptop(reset = false) {
-    if (contextLost) return;
+  function leaveLaptop() {
+    if (!focused || contextLost) return;
+    if (!transition) clearDamping();
     focused = false;
-    document.body.classList.remove('focused');
-    panel.hidden = true;
-    openButton.disabled = false;
+    selectedAction = null;
+    hint.textContent = 'Sürükle · Yaklaş · Ekrana tıkla';
     laptop.drawScreen(theme, false);
-    app.resize();
-    moveTo(reset ? app.homePose() : previousPose || app.homePose());
-    returnFocus.focus({ preventScroll: true });
-    announce(reset ? 'Başlangıç görünümüne dönüldü.' : 'Sahneye dönüldü.');
+    updateControls();
+    moveTo(returnPose());
+    announce('Önceki sahne görünümüne dönüldü.');
   }
-  openButton.addEventListener('click', openLaptop, listenerOptions);
-  backButton.addEventListener('click', () => leaveLaptop(), listenerOptions);
-  resetButton.addEventListener('click', () => {
-    if (!focused && !transition) clearDamping();
-    touchedCamera = false;
-    leaveLaptop(true);
-  }, listenerOptions);
-  themeButton.addEventListener('click', () => {
-    theme = 1 - theme;
-    laptop.drawScreen(theme, true);
-    announce(theme ? 'Gün batımı teması açıldı.' : 'Sessiz saatler teması açıldı.');
-  }, listenerOptions);
+  function selectAction(action) {
+    if (selectedAction === action) return;
+    selectedAction = action;
+    laptop.drawScreen(theme, focused, selectedAction);
+  }
+  function runAction(action) {
+    if (action === 'back') leaveLaptop();
+    else if (action === 'theme') {
+      theme = 1 - theme;
+      laptop.drawScreen(theme, true, selectedAction);
+      announce(theme ? 'Gün batımı teması açıldı.' : 'Sessiz saatler teması açıldı.');
+    }
+  }
+  function screenActionAt(x, y) {
+    const uv = app.screenAt(x, y);
+    return focused ? laptop.actionAt(uv) : uv ? 'open' : null;
+  }
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && focused) {
       event.preventDefault();
@@ -109,12 +133,23 @@ export function start(showError) {
     }
   }, listenerOptions);
   canvas.addEventListener('keydown', (event) => {
-    if (focused || transition || contextLost) return;
-    if (event.key === 'Enter' || event.key === ' ') {
+    if (transition || contextLost) return;
+    if (focused && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
       event.preventDefault();
-      openLaptop();
+      selectAction(event.key === 'ArrowLeft' ? 'theme' : 'back');
+      announce(selectedAction === 'theme' ? 'Tema seçildi. Enter ile değiştirin.' : 'Geri seçildi. Enter ile sahneye dönün.');
       return;
     }
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      if (focused) runAction(selectedAction || 'theme');
+      else {
+        openLaptop();
+        selectAction('theme');
+      }
+      return;
+    }
+    if (focused && event.key.startsWith('Arrow')) return;
     const offset = camera.position.clone().sub(controls.target);
     const spherical = new THREE.Spherical().setFromVector3(offset);
     switch (event.key) {
@@ -135,28 +170,43 @@ export function start(showError) {
   }, listenerOptions);
   controls.addEventListener('start', () => { touchedCamera = true; });
   canvas.addEventListener('pointerdown', (event) => {
-    if (focused || transition || event.button !== 0) return;
-    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY, moved: false });
+    if (transition || contextLost || event.button !== 0) return;
+    pointers.set(event.pointerId, {
+      x: event.clientX, y: event.clientY, moved: false,
+      action: screenActionAt(event.clientX, event.clientY),
+    });
     if (pointers.size > 1) for (const pointer of pointers.values()) pointer.moved = true;
   }, listenerOptions);
   canvas.addEventListener('pointermove', (event) => {
     const pointer = pointers.get(event.pointerId);
     if (pointer && Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y) > SETTINGS.dragThreshold) pointer.moved = true;
-    if (!focused && !transition && event.pointerType === 'mouse' && pointers.size === 0) {
-      canvas.style.cursor = app.screenAt(event.clientX, event.clientY) ? 'pointer' : 'grab';
+    if (!transition && !contextLost && event.pointerType === 'mouse' && pointers.size === 0) {
+      const action = screenActionAt(event.clientX, event.clientY);
+      if (focused) selectAction(action);
+      canvas.style.cursor = action ? 'pointer' : focused ? 'default' : 'grab';
     }
   }, listenerOptions);
   canvas.addEventListener('pointerup', (event) => {
     const pointer = pointers.get(event.pointerId);
     pointers.delete(event.pointerId);
-    if (!pointer || pointer.moved || focused || transition) return;
+    if (!pointer || pointer.moved || transition || contextLost) return;
     if (Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y) > SETTINGS.dragThreshold) return;
-    if (app.screenAt(event.clientX, event.clientY)) openLaptop();
+    const action = screenActionAt(event.clientX, event.clientY);
+    if (!action || action !== pointer.action) return;
+    canvas.focus({ preventScroll: true });
+    if (action === 'open') openLaptop();
+    else {
+      selectAction(action);
+      runAction(action);
+    }
   }, listenerOptions);
   for (const event of ['pointercancel', 'lostpointercapture']) {
     canvas.addEventListener(event, (pointerEvent) => pointers.delete(pointerEvent.pointerId), listenerOptions);
   }
-  canvas.addEventListener('pointerleave', () => { canvas.style.cursor = 'grab'; }, listenerOptions);
+  canvas.addEventListener('pointerleave', () => {
+    canvas.style.cursor = focused ? 'default' : 'grab';
+    if (focused) selectAction(null);
+  }, listenerOptions);
   function frame(time) {
     if (contextLost || disposed || document.hidden) return;
     const delta = previousTime === null ? 0 : Math.min((time - previousTime) / 1000, 0.05);
@@ -174,20 +224,34 @@ export function start(showError) {
       camera.position.copy(controls.target).add(motionOffset.setFromSpherical(motionSpherical));
       camera.lookAt(controls.target);
       if (progress === 1) finishTransition();
-    } else if (!focused) controls.update(delta);
+    } else {
+      controls.update(delta);
+      const distance = controls.getDistance();
+      if (!focused && distance < lastDistance - 1e-6 && distance <= enterDistance) openLaptop(lastFreePose);
+      else if (focused && distance > lastDistance + 1e-6 && distance >= focusDistance * SETTINGS.focusExitRatio) leaveLaptop();
+      else rememberCamera();
+    }
     if (!reducedMotion.matches) steam.update(elapsed);
     renderer.render(scene, camera);
   }
   const observer = new ResizeObserver(() => {
     if (disposed || contextLost) return;
+    const zoomRatio = focused && !transition ? controls.getDistance() / focusDistance : 1;
     app.resize();
-    if (focused) {
-      if (transition) {
-        transition.to = app.focusPose();
-        transition.toOrbit.radius = transition.to.position.distanceTo(transition.to.target);
-      }
-      else applyPose(app.focusPose());
-    } else if (!transition && !touchedCamera) applyPose(app.homePose());
+    const focusPose = app.focusPose();
+    const homePose = app.homePose();
+    focusDistance = focusPose.position.distanceTo(focusPose.target);
+    enterDistance = homePose.position.distanceTo(homePose.target) * SETTINGS.focusEnterRatio;
+    updateControls();
+    if (transition) moveTo(focused ? focusPose : returnPose());
+    else {
+      if (focused) {
+        focusPose.position.sub(focusPose.target).multiplyScalar(zoomRatio).add(focusPose.target);
+        applyPose(focusPose);
+      } else if (!touchedCamera) applyPose(homePose);
+      controls.update();
+      rememberCamera();
+    }
   });
   observer.observe(container);
   reducedMotion.addEventListener('change', () => {
@@ -195,7 +259,7 @@ export function start(showError) {
     steam.points.visible = !reducedMotion.matches;
     if (reducedMotion.matches) finishTransition();
   }, listenerOptions);
-  controls.enableDamping = !reducedMotion.matches;
+  updateControls();
   steam.points.visible = !reducedMotion.matches;
   document.addEventListener('visibilitychange', () => {
     previousTime = null;
@@ -222,7 +286,5 @@ export function start(showError) {
   }, listenerOptions);
   document.querySelector('#loading').hidden = true;
   container.setAttribute('aria-busy', 'false');
-  openButton.disabled = false;
-  resetButton.disabled = false;
   if (!document.hidden) renderer.setAnimationLoop(frame);
 }

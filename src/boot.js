@@ -5,7 +5,7 @@ function showError(message) {
   document.querySelector('#scene').setAttribute('aria-busy', 'false');
   document.querySelector('#error-message').textContent = message;
   errorPanel.hidden = false;
-  for (const id of ['open', 'reset', 'theme', 'back']) document.getElementById(id).disabled = true;
+  document.querySelector('#hint').hidden = true;
 }
 
 document.querySelector('#reload').addEventListener('click', () => location.reload());

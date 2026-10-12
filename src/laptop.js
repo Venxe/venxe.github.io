@@ -82,7 +82,27 @@ export function createLaptop() {
   badge.position.set(0, 1.18, -0.055);
   lid.add(badge);
 
-  function drawScreen(theme = 0, active = false) {
+  const actions = [
+    { id: 'theme', label: 'Tema', symbol: '◐', x: 356 },
+    { id: 'back', label: 'Geri', symbol: '↙', x: 612 },
+  ];
+  const actionY = 504;
+  const actionWidth = 232;
+  const actionHeight = 192;
+  let screenActive = false;
+
+  function actionAt(uv) {
+    if (!screenActive || !uv || !Number.isFinite(uv.x) || !Number.isFinite(uv.y)) return null;
+    const x = uv.x * screenCanvas.width;
+    const y = (1 - uv.y) * screenCanvas.height;
+    if (y < actionY || y >= actionY + actionHeight) return null;
+    return actions.find((action) => x >= action.x && x < action.x + actionWidth)?.id || null;
+  }
+
+  function drawScreen(theme = 0, active = false, selectedAction = null) {
+    screenActive = active;
+    context.textAlign = 'left';
+    context.textBaseline = 'alphabetic';
     const warm = theme === 1;
     const gradient = context.createLinearGradient(0, 0, 900, 720);
     gradient.addColorStop(0, warm ? '#482d38' : '#142c28');
@@ -103,37 +123,31 @@ export function createLaptop() {
       context.lineTo(0, 720);
       context.fill();
     }
-    context.fillStyle = '#ffffff16';
-    context.fillRect(0, 0, 1200, 43);
     context.fillStyle = '#e4e8dc';
     context.font = 'bold 17px monospace';
     context.fillText('venxe.', 28, 28);
-    context.font = '14px monospace';
-    context.fillText(warm ? 'GÜN BATIMI' : 'SESSİZ SAATLER', 965, 28);
-    context.fillStyle = '#eaf0dc';
-    context.font = '17px monospace';
-    context.fillText(active ? 'KENDİNE BİRAZ ALAN AÇ.' : 'BİR FİKİRLE BAŞLAR.', 75, 190);
-    context.font = '76px Georgia, serif';
-    context.fillText(active ? 'Merhaba,' : 'Az eşya.', 70, 282);
-    context.fillText(active ? 'iyi ki geldin.' : 'Çok ihtimal.', 70, 365);
-    context.fillStyle = '#dae3cf';
-    context.font = '20px Arial, sans-serif';
-    context.fillText(active ? 'Bugün güzel bir şey yapmak için iyi bir gün.' : 'Bir sonraki fikrin için küçük bir başlangıç.', 75, 415);
-    context.fillStyle = '#0c1b18bb';
-    context.beginPath();
-    context.roundRect(421, 629, 358, 66, 18);
-    context.fill();
-    for (let i = 0; i < 5; i++) {
-      context.fillStyle = ['#d7ebaa', '#8aa596', '#d6b88b', '#8eabb1', '#b6a9bf'][i];
-      context.beginPath();
-      context.roundRect(438 + i * 67, 641, 43, 43, 10);
-      context.fill();
-      context.fillStyle = '#27382f';
-      context.font = 'bold 19px monospace';
-      context.fillText(['>_', '≡', '◷', '◇', '✦'][i], 447 + i * 67, 669);
+    if (active) {
+      context.textAlign = 'center';
+      context.textBaseline = 'middle';
+      for (const action of actions) {
+        context.fillStyle = '#0c1b18bb';
+        context.beginPath();
+        context.roundRect(action.x, actionY, actionWidth, actionHeight, 24);
+        context.fill();
+        if (action.id === selectedAction) {
+          context.strokeStyle = '#d7ebaa';
+          context.lineWidth = 4;
+          context.stroke();
+        }
+        context.fillStyle = '#eaf0dc';
+        context.font = '54px "Segoe UI Symbol", Arial, sans-serif';
+        context.fillText(action.symbol, action.x + actionWidth / 2, actionY + 74);
+        context.font = '26px "Segoe UI", Arial, sans-serif';
+        context.fillText(action.label, action.x + actionWidth / 2, actionY + 151);
+      }
     }
     texture.needsUpdate = true;
   }
   drawScreen();
-  return { group, screen, drawScreen };
+  return { group, screen, drawScreen, actionAt };
 }
