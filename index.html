@@ -1,11 +1,57 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta http-equiv="refresh" content="0; url=https://sayimburak.com/">
-    <script>window.location.replace("https://sayimburak.com/");</script>
-</head>
-<body>
-    <p>Visit <a href="https://sayimburak.com/">sayimburak.com</a></p>
-</body>
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#101211">
+    <meta name="description" content="Biraz kod, bir yudum kahve. Keşfedebileceğiniz küçük bir 3D çalışma alanı.">
+    <title>Venxe — Mesai sonrası</title>
+    <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="./styles.css">
+    <script type="importmap">
+      {"imports":{"three":"./vendor/three/build/three.module.min.js","three/addons/":"./vendor/three/addons/"}}
+    </script>
+  </head>
+  <body>
+    <header class="masthead">
+      <a class="wordmark" href="./" aria-label="Venxe ana sayfa">venxe<span class="wordmark-dot">.</span></a>
+      <span class="edition">DİJİTAL BİR MOLA <span class="slash">/</span> NO. 001</span>
+      <span class="live-label"><span class="status-dot"></span> MESAİ SONRASI</span>
+    </header>
+    <main>
+      <section class="intro" aria-labelledby="page-title">
+        <p class="eyebrow"><span></span> KÜÇÜK BİR ÇALIŞMA ALANI</p>
+        <h1 id="page-title">Biraz kod.<br>Bir yudum <em>kahve.</em></h1>
+        <p class="intro-copy">Dünya biraz yavaşlasın.<br>Etrafına bak, ekranı aç, bir mola ver.</p>
+      </section>
+      <div id="scene" class="scene" role="region" aria-label="Laptop ve kahvenin bulunduğu etkileşimli 3D sahne" aria-describedby="scene-help" aria-busy="true">
+        <div id="loading" class="loading" role="status"><span class="loading-mark"></span> Çalışma alanı hazırlanıyor</div>
+        <div id="error" class="error" role="alert" hidden>
+          <span class="eyebrow">KISA BİR ARA</span><h2>Sahne açılamadı.</h2>
+          <p id="error-message">Bu deneyim WebGL2 destekleyen bir tarayıcı gerektiriyor.</p>
+          <button id="reload" type="button">Yeniden dene <span aria-hidden="true">↗</span></button>
+        </div>
+      </div>
+      <aside class="scene-note" aria-hidden="true"><span class="note-line"></span><span>HER ŞEY YERLİ YERİNDE.<br><span class="muted">Kahven hâlâ sıcak.</span></span></aside>
+      <div id="focus-panel" class="focus-panel" hidden>
+        <div><span class="eyebrow">LAPTOP AÇIK</span><p>Senin küçük dijital alanın.</p></div>
+        <button id="theme" class="button secondary" type="button">Ekran temasını değiştir <span aria-hidden="true">◐</span></button>
+        <button id="back" class="button primary" type="button">Sahneye dön <span aria-hidden="true">↗</span></button>
+      </div>
+      <p id="announcement" class="sr-only" role="status" aria-live="polite"></p>
+    </main>
+    <footer class="toolbar">
+      <div id="scene-help" class="instructions">
+        <span class="instruction"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="2.5" width="11" height="18" rx="5.5"/><path d="M12 3v6M3 10l-2 2 2 2m18-4 2 2-2 2"/></svg><span>Sürükle <span class="muted">/ döndür</span></span></span>
+        <span class="instruction"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18m-4-14 4-4 4 4m-8 10 4 4 4-4"/></svg><span>Kaydır <span class="muted">/ yaklaş</span></span></span>
+        <span class="touch-instruction">Tek parmakla döndür · İki parmakla yaklaş</span>
+      </div>
+      <div class="toolbar-actions">
+        <button id="reset" class="icon-button" type="button" title="Görünümü sıfırla" aria-label="Görünümü sıfırla" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10a8 8 0 1 1 1 7M4 4v6h6"/></svg></button>
+        <button id="open" class="button primary" type="button" disabled><span class="button-dot"></span> Laptopu keşfet <span aria-hidden="true">↗</span></button>
+      </div>
+    </footer>
+    <noscript><p class="noscript">Bu 3D deneyim için JavaScript’i etkinleştirin.</p></noscript>
+    <script type="module" src="./src/boot.js"></script>
+  </body>
 </html>
