@@ -186,12 +186,15 @@ function framedLaptop(test) {
     }
   });
   const center = outline.getCenter(new THREE.Vector2());
-  assert.ok(Math.abs(center.x) < 0.002 && Math.abs(center.y) < 0.002, `Visible laptop margins must be equal on both axes; center=${center.toArray()}`);
+  const viewport = test.canvas.getBoundingClientRect();
+  // Rounded surfaces can sit slightly inside their mesh bounds.
+  assert.ok(Math.abs(center.x) * viewport.width / 2 <= 2 && Math.abs(center.y) * viewport.height / 2 <= 2, `Visible laptop margins must be centered within two CSS pixels; center=${center.toArray()}`);
   const size = outline.getSize(new THREE.Vector2());
-  assert.ok(Math.max(size.x, size.y) >= 1.68, 'Laptop focus must fill at least 84% of the limiting viewport axis');
+  assert.ok(Math.max(size.x, size.y) >= 1.76, 'Laptop focus must fill at least 88% of the limiting viewport axis');
   assert.ok(Math.max(Math.abs(outline.min.x), Math.abs(outline.min.y), Math.abs(outline.max.x), Math.abs(outline.max.y)) <= 0.985, 'The whole laptop must remain visible while zooming toward fullscreen');
   const direction = test.camera.getWorldDirection(new THREE.Vector3());
-  assert.ok(direction.distanceTo(new THREE.Vector3(0, -0.5, -Math.sqrt(0.75))) < 1e-8, 'Laptop focus must view the keyboard from above and in front');
+  const elevation = THREE.MathUtils.radToDeg(Math.asin(-direction.y));
+  assert.ok(Math.abs(direction.x) < 1e-8 && elevation >= 12 && elevation <= 18, 'Laptop focus must use a low front angle like a seated user');
 }
 
 function fullscreenScreen(test) {
@@ -418,10 +421,10 @@ for (const reduced of [true, false]) {
   const savedRotation = gestures.camera.quaternion.clone();
   gestures.key('Enter');
   gestures.tick(20);
-  gestures.wheel(-200);
+  gestures.wheel(-100);
   gestures.tick();
   framedLaptop(gestures);
-  gestures.wheel(-200);
+  gestures.wheel(-100);
   gestures.tick();
   assert.equal(gestures.mode, 'screen', 'Small wheel deltas must accumulate to enter fullscreen');
   gestures.tick(20);

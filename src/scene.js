@@ -87,7 +87,7 @@ export function createScene(container) {
   const viewUp = new THREE.Vector3().setFromMatrixColumn(orientation, 1);
   const offsets = corners.map((corner) => corner.clone().sub(homeTarget));
   const laptopTarget = laptopBounds.getCenter(new THREE.Vector3());
-  const laptopDirection = new THREE.Vector3(0, 0.5, Math.sqrt(0.75));
+  const laptopDirection = new THREE.Vector3(0, Math.sin(SETTINGS.focusElevation), Math.cos(SETTINGS.focusElevation));
   const laptopUp = new THREE.Vector3(0, laptopDirection.z, -laptopDirection.y);
   const laptopFrame = [];
   // Preserve each mesh's orientation instead of framing empty world-box corners.
