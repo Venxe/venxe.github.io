@@ -73,7 +73,8 @@ export function createScene(container) {
   const hits = [];
   const selectableObjects = [laptop.group, coffee.group, floor];
   const initialDirection = new THREE.Vector3(3.8, 4.2, 8).normalize();
-  const modelBounds = new THREE.Box3().setFromObject(laptop.group).union(new THREE.Box3().setFromObject(coffee.group));
+  const laptopBounds = new THREE.Box3().setFromObject(laptop.group);
+  const modelBounds = laptopBounds.clone().union(new THREE.Box3().setFromObject(coffee.group));
   const homeTarget = modelBounds.getCenter(new THREE.Vector3());
   const corners = [];
   for (const x of [modelBounds.min.x, modelBounds.max.x]) {
@@ -85,8 +86,29 @@ export function createScene(container) {
   const viewRight = new THREE.Vector3().setFromMatrixColumn(orientation, 0);
   const viewUp = new THREE.Vector3().setFromMatrixColumn(orientation, 1);
   const offsets = corners.map((corner) => corner.clone().sub(homeTarget));
+  const laptopTarget = laptopBounds.getCenter(new THREE.Vector3());
+  const laptopDirection = new THREE.Vector3(0, 0.5, Math.sqrt(0.75));
+  const laptopUp = new THREE.Vector3(0, laptopDirection.z, -laptopDirection.y);
+  const laptopFrame = [];
+  // Preserve each mesh's orientation instead of framing empty world-box corners.
+  laptop.group.traverseVisible((mesh) => {
+    if (!mesh.isMesh || !mesh.material.visible) return;
+    if (mesh.isInstancedMesh) mesh.computeBoundingBox();
+    else mesh.geometry.computeBoundingBox();
+    const bounds = mesh.isInstancedMesh ? mesh.boundingBox : mesh.geometry.boundingBox;
+    for (const x of [bounds.min.x, bounds.max.x]) {
+      for (const y of [bounds.min.y, bounds.max.y]) {
+        for (const z of [bounds.min.z, bounds.max.z]) {
+          const point = new THREE.Vector3(x, y, z).applyMatrix4(mesh.matrixWorld).sub(laptopTarget);
+          laptopFrame.push(new THREE.Vector3(point.x, point.dot(laptopUp), point.dot(laptopDirection)));
+        }
+      }
+    }
+  });
+  const frameBounds = new THREE.Box3().setFromPoints(laptopFrame);
   const screenCenter = laptop.screen.getWorldPosition(new THREE.Vector3());
   const screenNormal = laptop.screen.getWorldDirection(new THREE.Vector3());
+  const screenUp = new THREE.Vector3(0, 1, 0).transformDirection(laptop.screen.matrixWorld);
 
   // Include each corner's projected ground shadow when fitting the static map.
   mainLight.target.position.copy(homeTarget);
@@ -113,12 +135,47 @@ export function createScene(container) {
     const target = homeTarget.clone();
     return { target, position: target.clone().addScaledVector(initialDirection, homeDistance) };
   }
-  function focusPose() {
+  function laptopPose(zoomRatio = 1) {
+    const verticalFov = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+    const horizontalFov = verticalFov * camera.aspect;
+    const slopes = new THREE.Vector2(horizontalFov, verticalFov).multiplyScalar(SETTINGS.focusFrameRatio);
+    const lower = new THREE.Vector2(Infinity, Infinity);
+    const upper = new THREE.Vector2(-Infinity, -Infinity);
+    for (const point of laptopFrame) {
+      lower.x = Math.min(lower.x, point.x - slopes.x * point.z);
+      lower.y = Math.min(lower.y, point.y - slopes.y * point.z);
+      upper.x = Math.max(upper.x, point.x + slopes.x * point.z);
+      upper.y = Math.max(upper.y, point.y + slopes.y * point.z);
+    }
+    // The tightest centered fit still has room for inward zoom before immersion.
+    const distance = Math.max((upper.x - lower.x) / (2 * slopes.x), (upper.y - lower.y) / (2 * slopes.y)) * zoomRatio / SETTINGS.focusMinRatio;
+    const low = new THREE.Vector2(frameBounds.min.x, frameBounds.min.y);
+    const high = new THREE.Vector2(frameBounds.max.x, frameBounds.max.y);
+    // Perspective changes the silhouette's center as the camera gets closer.
+    for (let i = 0; i < 24; i++) {
+      const shift = low.clone().add(high).multiplyScalar(0.5);
+      const min = new THREE.Vector2(Infinity, Infinity);
+      const max = new THREE.Vector2(-Infinity, -Infinity);
+      for (const point of laptopFrame) {
+        const depth = distance - point.z;
+        const x = (point.x - shift.x) / depth;
+        const y = (point.y - shift.y) / depth;
+        min.x = Math.min(min.x, x); max.x = Math.max(max.x, x);
+        min.y = Math.min(min.y, y); max.y = Math.max(max.y, y);
+      }
+      if (min.x + max.x > 0) low.x = shift.x; else high.x = shift.x;
+      if (min.y + max.y > 0) low.y = shift.y; else high.y = shift.y;
+    }
+    const target = laptopTarget.clone().add(new THREE.Vector3((low.x + high.x) / 2, 0, 0)).addScaledVector(laptopUp, (low.y + high.y) / 2);
+    return { target, position: target.clone().addScaledVector(laptopDirection, distance) };
+  }
+  function screenPose() {
     const halfFov = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
     const { width, height } = laptop.screen.geometry.parameters;
-    // Fit the enlarged screen even at the closest allowed focused zoom.
-    const distance = Math.max(3.7, width / (2 * halfFov * camera.aspect * SETTINGS.focusMinRatio), height / (2 * halfFov * SETTINGS.focusMinRatio));
-    return { target: screenCenter.clone(), position: screenCenter.clone().addScaledVector(screenNormal, distance) };
+    // Anchor cropping at the top so the taskbar stays visible on wide viewports.
+    const distance = Math.min(width / (2 * halfFov * camera.aspect), height / (2 * halfFov)) * SETTINGS.screenCoverRatio;
+    const target = screenCenter.clone().addScaledVector(screenUp, height / 2 - halfFov * distance / SETTINGS.screenCoverRatio);
+    return { target, position: target.clone().addScaledVector(screenNormal, distance) };
   }
   function resize() {
     const { width, height } = container.getBoundingClientRect();
@@ -197,5 +254,5 @@ export function createScene(container) {
   camera.position.copy(homePose().position);
   controls.update();
   renderer.shadowMap.needsUpdate = true;
-  return { renderer, scene, camera, controls, steam, keyboard: laptop.keyboard, webcam: laptop.webcam, lid: laptop.lid, homePose, focusPose, resize, pickAt, dispose };
+  return { renderer, scene, camera, controls, steam, keyboard: laptop.keyboard, webcam: laptop.webcam, lid: laptop.lid, homePose, laptopPose, screenPose, resize, pickAt, dispose };
 }

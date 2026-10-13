@@ -41,24 +41,46 @@ const { start } = await import('../src/main.js');
 const drawing = new Proxy({}, { get: (_, key) => key === 'createLinearGradient' ? () => ({ addColorStop() {} }) : () => {} });
 
 function send(target, type, properties = {}) {
-  const event = Object.assign(new Event(type, { cancelable: true }), properties);
+  const { timeStamp, ...values } = properties;
+  const event = Object.assign(new Event(type, { cancelable: true }), values);
+  if (timeStamp !== undefined) Object.defineProperty(event, 'timeStamp', { value: timeStamp });
   target.dispatchEvent(event);
   return event;
 }
 
+// Node EventTarget does not order capture listeners before bubble listeners.
+class CanvasTarget extends EventTarget {
+  capture = new EventTarget();
+  addEventListener(type, listener, options) {
+    if (options?.capture) this.capture.addEventListener(type, listener, options);
+    else super.addEventListener(type, listener, options);
+  }
+  removeEventListener(type, listener, options) {
+    if (options?.capture) this.capture.removeEventListener(type, listener, options);
+    else super.removeEventListener(type, listener, options);
+  }
+  dispatchEvent(event) {
+    this.capture.dispatchEvent(event);
+    return event.cancelBubble ? !event.defaultPrevented : super.dispatchEvent(event);
+  }
+}
+
 function setup(width, height, reduceMotion = true) {
   const document = Object.assign(new EventTarget(), { hidden: false, createElement: () => ({ getContext: () => drawing }) });
-  const canvas = Object.assign(new EventTarget(), {
+  const canvas = Object.assign(new CanvasTarget(), {
     style: {}, getRootNode: () => document, focus() { document.activeElement = this; },
     setAttribute() {}, setPointerCapture() {}, releasePointerCapture() {}, remove() {},
     getBoundingClientRect: () => ({ left: 0, top: 0, width, height }),
   });
   Object.defineProperties(canvas, { clientWidth: { get: () => width }, clientHeight: { get: () => height } });
-  const elements = new Map(['scene', 'hint', 'announcement', 'loading'].map((id) => [id, { setAttribute() {}, textContent: '', hidden: false }]));
+  const elements = new Map(['scene', 'hint', 'announcement', 'loading', 'masthead'].map((id) => {
+    const attributes = new Map();
+    return [id, { setAttribute(name, value) { attributes.set(name, value); }, getAttribute(name) { return attributes.get(name); }, contains: () => false, textContent: '', hidden: false }];
+  }));
   for (const id of ['camera-cover-toggle', 'laptop-lid-toggle']) {
     const attributes = new Map([['aria-pressed', 'false']]);
     elements.set(id, Object.assign(new EventTarget(), {
-      disabled: false,
+      disabled: false, hidden: false,
       setAttribute(name, value) { attributes.set(name, value); },
       getAttribute(name) { return attributes.get(name); },
     }));
@@ -94,9 +116,15 @@ function setup(width, height, reduceMotion = true) {
   start((message) => errors.push(message));
   let time = 0;
   const tick = (count = 1) => { for (let i = 0; i < count; i++) renderer.loop?.(time += 50); };
-  const key = (value) => send(canvas, 'keydown', { key: value });
-  const wheel = (deltaY) => send(canvas, 'wheel', { deltaY, deltaMode: 0, clientX: width / 2, clientY: height / 2 });
-  const pointer = (type, x, y, id = 1, pointerType = 'mouse') => send(canvas, type, { clientX: x, clientY: y, pageX: x, pageY: y, pointerId: id, pointerType, button: 0 });
+  const keyDown = (value, repeat = false) => {
+    const event = send(canvas, 'keydown', { key: value, repeat });
+    if (!event.cancelBubble) document.dispatchEvent(event);
+    return event;
+  };
+  const keyUp = (value) => send(document, 'keyup', { key: value });
+  const key = (value) => { const event = keyDown(value); keyUp(value); return event; };
+  const wheel = (deltaY, deltaMode = 0) => send(canvas, 'wheel', { deltaY, deltaMode, timeStamp: time, clientX: width / 2, clientY: height / 2 });
+  const pointer = (type, x, y, id = 1, pointerType = 'mouse') => send(canvas, type, { clientX: x, clientY: y, pageX: x, pageY: y, pointerId: id, pointerType, button: 0, timeStamp: time });
   tick();
   const screen = renderer.scene.getObjectByName('laptop-screen');
   assert.ok(screen, 'The rendered scene must contain the laptop screen');
@@ -122,9 +150,10 @@ function setup(width, height, reduceMotion = true) {
     pointer('pointerup', endX, y, 2, 'touch');
     pointer('pointerup', x - 30, y, 1, 'touch');
   };
-  return { renderer, screen, elements, document, window, canvas, preference, errors, tick, key, wheel, pointer, click, pinch, screenPoint,
+  return { renderer, screen, elements, document, window, canvas, preference, errors, tick, key, keyDown, keyUp, wheel, pointer, click, pinch, screenPoint,
     get camera() { return renderer.camera; },
-    get focused() { return elements.get('hint').textContent === 'Zoom out to return'; },
+    get mode() { return elements.get('scene').getAttribute('data-view-mode'); },
+    get focused() { return this.mode !== 'free'; },
     resize(w, h) { width = w; height = h; resizeCallback(); },
     close() { send(window, 'pagehide', { persisted: false }); },
   };
@@ -135,22 +164,66 @@ function samePose(test, position, rotation) {
   assert.ok(test.camera.quaternion.angleTo(rotation) < 1e-7, 'Return must restore the saved viewing direction');
 }
 
-function centeredScreen(test) {
+function framedLaptop(test) {
+  assert.equal(test.mode, 'laptop');
+  test.camera.updateMatrixWorld();
+  let group = test.screen;
+  while (group.parent !== test.renderer.scene) group = group.parent;
+  const outline = new THREE.Box2();
+  const instance = new THREE.Matrix4();
+  group.traverse((mesh) => {
+    if (!mesh.isMesh || !mesh.visible || !mesh.material.visible) return;
+    const vertices = mesh.geometry.attributes.position;
+    for (let i = 0; i < (mesh.isInstancedMesh ? mesh.count : 1); i++) {
+      if (mesh.isInstancedMesh) mesh.getMatrixAt(i, instance);
+      for (let j = 0; j < vertices.count; j++) {
+        const point = new THREE.Vector3().fromBufferAttribute(vertices, j);
+        if (mesh.isInstancedMesh) point.applyMatrix4(instance);
+        point.applyMatrix4(mesh.matrixWorld).project(test.camera);
+        assert.ok(point.z > -1 && point.z < 1, 'The laptop must stay inside the camera clipping planes');
+        outline.expandByPoint(new THREE.Vector2(point.x, point.y));
+      }
+    }
+  });
+  const center = outline.getCenter(new THREE.Vector2());
+  assert.ok(Math.abs(center.x) < 0.002 && Math.abs(center.y) < 0.002, `Visible laptop margins must be equal on both axes; center=${center.toArray()}`);
+  const size = outline.getSize(new THREE.Vector2());
+  assert.ok(Math.max(size.x, size.y) >= 1.68, 'Laptop focus must fill at least 84% of the limiting viewport axis');
+  assert.ok(Math.max(Math.abs(outline.min.x), Math.abs(outline.min.y), Math.abs(outline.max.x), Math.abs(outline.max.y)) <= 0.985, 'The whole laptop must remain visible while zooming toward fullscreen');
+  const direction = test.camera.getWorldDirection(new THREE.Vector3());
+  assert.ok(direction.distanceTo(new THREE.Vector3(0, -0.5, -Math.sqrt(0.75))) < 1e-8, 'Laptop focus must view the keyboard from above and in front');
+}
+
+function fullscreenScreen(test) {
+  assert.equal(test.mode, 'screen');
   test.camera.updateMatrixWorld();
   const point = test.screen.getWorldPosition(new THREE.Vector3()).project(test.camera);
-  assert.ok(Math.abs(point.x) < 1e-8 && Math.abs(point.y) < 1e-8, 'Focus must center the laptop screen');
+  assert.ok(Math.abs(point.x) < 1e-8, 'Fullscreen must keep the desktop horizontally centered');
   const normal = test.screen.getWorldDirection(new THREE.Vector3());
   assert.ok(test.camera.getWorldDirection(new THREE.Vector3()).dot(normal) < -0.999999, 'Focus must face the screen');
   const { width, height } = test.screen.geometry.parameters;
+  const top = test.screen.localToWorld(new THREE.Vector3(0, height / 2, 0)).project(test.camera);
+  assert.ok(top.y >= 1 && top.y <= 1.006, 'Fullscreen must anchor the top of the desktop at the viewport edge');
+  const taskbarCenter = test.screen.localToWorld(new THREE.Vector3(0, height / 2 - height * 18 / test.screen.material.map.image.height, 0)).project(test.camera);
+  assert.ok(taskbarCenter.y > -1 && taskbarCenter.y < 1, 'The top taskbar content must remain visible in fullscreen');
   for (const x of [-width / 2, width / 2]) {
     for (const y of [-height / 2, height / 2]) {
       const corner = test.screen.localToWorld(new THREE.Vector3(x, y, 0)).project(test.camera);
-      assert.ok(Math.abs(corner.x) <= 1.001 && Math.abs(corner.y) <= 1.001, 'The enlarged screen must fit the focused viewport');
+      assert.ok(Math.abs(corner.x) >= 1.004 && Math.abs(corner.y) >= 1.004, 'The desktop must cover the viewport in both axes');
     }
   }
+  const raycaster = new THREE.Raycaster();
+  for (const x of [-1, 0, 1]) {
+    for (const y of [-1, 0, 1]) {
+      raycaster.setFromCamera(new THREE.Vector2(x, y), test.camera);
+      const hit = raycaster.intersectObjects(test.renderer.scene.children, true).find((entry) => entry.object.isMesh && entry.object.material.visible);
+      assert.equal(hit?.object, test.screen, 'Only desktop pixels must be visible at the viewport corners and center');
+    }
+  }
+  for (const id of ['masthead', 'hint', 'camera-cover-toggle', 'laptop-lid-toggle']) assert.equal(test.elements.get(id).hidden, true, 'Fullscreen must hide every HUD control');
 }
 
-for (const [width, height] of [[1440, 900], [390, 844], [844, 390], [320, 568]]) {
+for (const [width, height] of [[1440, 900], [390, 844], [844, 390], [320, 568], [2560, 1080]]) {
   const test = setup(width, height);
   assert.equal(test.renderer.options.alpha, false, 'The studio canvas must be opaque');
   assert.equal(test.renderer.pixelRatio, 1.5, 'High-DPI devices must respect the pixel ratio budget');
@@ -187,20 +260,33 @@ for (const [width, height] of [[1440, 900], [390, 844], [844, 390], [320, 568]])
     test.tick();
   }
   assert.equal(test.focused, true, 'Zooming inward must focus the screen');
-  centeredScreen(test);
+  framedLaptop(test);
   const focusPosition = test.camera.position.clone();
-  if (width >= height) {
-    const center = test.screen.getWorldPosition(new THREE.Vector3());
-    assert.ok(test.camera.position.distanceTo(center) < 5, 'OrbitControls must not push the focused camera out to the free-view minimum');
-  }
   assert.equal(test.document.activeElement, undefined, 'Automatic focus must not steal keyboard focus');
   test.wheel(120);
   test.tick();
-  assert.equal(test.focused, true, 'Small outward zoom must stay in focus');
-  assert.ok(test.camera.position.distanceTo(focusPosition) > 0.01, 'Wheel zoom must remain active in focus');
+  assert.equal(test.mode, 'laptop', 'The rest of the entry gesture must not leave laptop focus');
+  assert.ok(test.camera.position.distanceTo(focusPosition) < 1e-8, 'Consumed wheel input must not move the camera');
+  test.tick(5);
+  test.wheel(-400);
+  test.tick();
+  fullscreenScreen(test);
+  test.wheel(-120);
+  test.tick();
+  fullscreenScreen(test);
+  test.tick(5);
+  test.wheel(120);
+  test.tick();
+  framedLaptop(test);
+  assert.ok(test.camera.position.distanceTo(focusPosition) < 1e-8, 'Leaving fullscreen must restore the initial laptop framing');
   test.wheel(240);
   test.tick();
+  assert.equal(test.mode, 'laptop', 'One outward gesture must not skip the laptop stage');
+  test.tick(5);
+  test.wheel(120);
+  test.tick();
   assert.equal(test.focused, false, 'Zooming outward must return to free view');
+  for (const id of ['masthead', 'hint', 'camera-cover-toggle', 'laptop-lid-toggle']) assert.equal(test.elements.get(id).hidden, false, 'Leaving fullscreen must restore every HUD control');
   samePose(test, position, rotation);
   test.tick(3);
   assert.equal(test.focused, false, 'Return must not immediately refocus');
@@ -226,6 +312,11 @@ for (const [width, height] of [[1440, 900], [390, 844], [844, 390], [320, 568]])
   samePose(test, position, rotation);
   test.pinch(1.25);
   assert.equal(test.focused, true, 'A pinch inward must focus the screen');
+  framedLaptop(test);
+  test.pinch(1.25);
+  fullscreenScreen(test);
+  test.pinch(0.8);
+  framedLaptop(test);
   test.pinch(0.8);
   assert.equal(test.focused, false, 'A pinch outward must return to free view');
   samePose(test, position, rotation);
@@ -237,7 +328,9 @@ for (const [width, height] of [[1440, 900], [390, 844], [844, 390], [320, 568]])
     test.key('+');
     test.tick();
   }
-  centeredScreen(test);
+  fullscreenScreen(test);
+  send(test.document, 'keydown', { key: 'Escape' });
+  framedLaptop(test);
   send(test.document, 'keydown', { key: 'Escape' });
   samePose(test, position, rotation);
   test.close();
@@ -270,13 +363,26 @@ assert.ok(animated.camera.position.distanceTo(transitionPosition) < 1e-8, 'Wheel
 animated.tick(5);
 animated.resize(390, 844);
 animated.tick(20);
-centeredScreen(animated);
-animated.key('-');
+framedLaptop(animated);
+animated.wheel(-120);
 animated.tick();
+framedLaptop(animated);
 assert.equal(animated.focused, true);
 animated.resize(844, 390);
 animated.tick();
 assert.equal(animated.focused, true, 'Resizing must not exit focus');
+framedLaptop(animated);
+animated.key('+');
+animated.tick(5);
+animated.resize(390, 844);
+animated.tick(20);
+fullscreenScreen(animated);
+animated.resize(844, 390);
+animated.tick();
+fullscreenScreen(animated);
+animated.key('-');
+animated.tick(20);
+framedLaptop(animated);
 animated.key('-');
 animated.tick(20);
 samePose(animated, beforeFocus, beforeRotation);
@@ -288,7 +394,7 @@ animated.tick();
 assert.equal(animated.focused, true, 'Inward zoom must focus even when resize placed the camera inside the threshold');
 animated.preference.matches = true;
 send(animated.preference, 'change');
-centeredScreen(animated);
+framedLaptop(animated);
 const steam = animated.renderer.scene.children.find((object) => object.isPoints);
 assert.equal(steam.visible, false, 'Reduced motion must hide the steam');
 const steamTime = steam.material.uniforms.time.value;
@@ -305,6 +411,112 @@ send(animated.canvas, 'webglcontextlost');
 assert.equal(animated.errors.length, 1);
 assert.equal(animated.renderer.loop, null, 'Context loss must stop rendering');
 animated.close();
+
+for (const reduced of [true, false]) {
+  const gestures = setup(1440, 900, reduced);
+  let savedPosition = gestures.camera.position.clone();
+  const savedRotation = gestures.camera.quaternion.clone();
+  gestures.key('Enter');
+  gestures.tick(20);
+  gestures.wheel(-200);
+  gestures.tick();
+  framedLaptop(gestures);
+  gestures.wheel(-200);
+  gestures.tick();
+  assert.equal(gestures.mode, 'screen', 'Small wheel deltas must accumulate to enter fullscreen');
+  gestures.tick(20);
+  fullscreenScreen(gestures);
+  gestures.wheel(120);
+  gestures.tick();
+  assert.equal(gestures.mode, 'laptop', 'A new outward gesture must leave fullscreen');
+  for (let i = 0; i < 25; i++) {
+    gestures.wheel(120);
+    gestures.tick();
+    assert.equal(gestures.mode, 'laptop', 'Wheel inertia must stay consumed after the transition finishes');
+  }
+  framedLaptop(gestures);
+  gestures.tick(4);
+  gestures.wheel(120);
+  gestures.tick(20);
+  samePose(gestures, savedPosition, savedRotation);
+
+  gestures.keyDown('+');
+  for (let i = 0; gestures.mode === 'free' && i < 20; i++) {
+    savedPosition = gestures.camera.position.clone();
+    gestures.keyDown('+', true);
+  }
+  gestures.tick(20);
+  framedLaptop(gestures);
+  for (let i = 0; i < 8; i++) gestures.keyDown('+', true);
+  gestures.tick(20);
+  framedLaptop(gestures);
+  gestures.keyUp('+');
+  gestures.keyDown('+');
+  gestures.keyDown('+', true);
+  gestures.tick(20);
+  fullscreenScreen(gestures);
+  gestures.keyUp('+');
+  gestures.keyDown('-');
+  gestures.tick(20);
+  for (let i = 0; i < 8; i++) gestures.keyDown('-', true);
+  gestures.tick(20);
+  framedLaptop(gestures);
+  gestures.keyUp('-');
+  gestures.key('-');
+  gestures.tick(20);
+  samePose(gestures, savedPosition, savedRotation);
+
+  gestures.key('Enter');
+  gestures.tick(20);
+  gestures.document.activeElement = gestures.elements.get('camera-cover-toggle');
+  gestures.pointer('pointerdown', 700, 450, 1, 'touch');
+  gestures.pointer('pointerdown', 760, 450, 2, 'touch');
+  gestures.pointer('pointermove', 820, 450, 2, 'touch');
+  gestures.tick(20);
+  fullscreenScreen(gestures);
+  assert.equal(gestures.document.activeElement, gestures.canvas, 'Hiding an active HUD control must move focus to the canvas');
+  gestures.pointer('pointermove', 730, 450, 2, 'touch');
+  gestures.tick(20);
+  fullscreenScreen(gestures);
+  gestures.pointer('pointerup', 730, 450, 2, 'touch');
+  gestures.pointer('pointerdown', 760, 450, 3, 'touch');
+  gestures.pointer('pointermove', 720, 450, 3, 'touch');
+  gestures.tick(20);
+  fullscreenScreen(gestures);
+  gestures.pointer('pointerup', 720, 450, 3, 'touch');
+  gestures.pointer('pointerup', 700, 450, 1, 'touch');
+  gestures.pinch(0.8);
+  gestures.tick(20);
+  framedLaptop(gestures);
+  gestures.pinch(0.8);
+  gestures.tick(20);
+  samePose(gestures, savedPosition, savedRotation);
+
+  gestures.key('Enter');
+  gestures.tick(20);
+  gestures.wheel(-25, 1);
+  gestures.tick(20);
+  fullscreenScreen(gestures);
+  gestures.keyDown('Escape');
+  gestures.tick(20);
+  gestures.keyDown('Escape', true);
+  assert.equal(gestures.mode, 'laptop', 'Holding Escape must not skip a stage');
+  gestures.keyUp('Escape');
+  gestures.key('Escape');
+  gestures.tick(20);
+  samePose(gestures, savedPosition, savedRotation);
+  gestures.key('Enter');
+  gestures.tick(20);
+  gestures.wheel(-4, 2);
+  gestures.tick(20);
+  fullscreenScreen(gestures);
+  send(gestures.elements.get('laptop-lid-toggle'), 'click');
+  gestures.tick(20);
+  assert.equal(gestures.mode, 'free', 'Closing the lid from fullscreen must return directly to the scene');
+  samePose(gestures, savedPosition, savedRotation);
+  gestures.close();
+}
+console.log('PASS: two-stage framing and screen coverage, HUD visibility/focus, wheel accumulation/inertia and delta modes, held zoom/Escape keys, continuous pinch/release, fullscreen resize, reduced motion, and saved scene return.');
 
 const typing = setup(1440, 900, false);
 const keyboardMesh = typing.renderer.scene.getObjectByName('keyboard');
@@ -602,7 +814,7 @@ laptopLid.tick(14);
 laptopLid.click(0.5, 0.5);
 laptopLid.tick(14);
 assert.equal(laptopLid.focused, true, 'Screen picking must work again after reopening');
-centeredScreen(laptopLid);
+framedLaptop(laptopLid);
 send(lidCoverButton, 'click');
 assert.equal(lidCoverButton.getAttribute('aria-pressed'), 'true', 'Camera-cover control must work again after reopening');
 laptopLid.key('Escape');
