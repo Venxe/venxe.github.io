@@ -55,12 +55,14 @@ function setup(width, height, reduceMotion = true) {
   });
   Object.defineProperties(canvas, { clientWidth: { get: () => width }, clientHeight: { get: () => height } });
   const elements = new Map(['scene', 'hint', 'announcement', 'loading'].map((id) => [id, { setAttribute() {}, textContent: '', hidden: false }]));
-  const attributes = new Map([['aria-pressed', 'false']]);
-  const coverButton = Object.assign(new EventTarget(), {
-    setAttribute(name, value) { attributes.set(name, value); },
-    getAttribute(name) { return attributes.get(name); },
-  });
-  elements.set('camera-cover-toggle', coverButton);
+  for (const id of ['camera-cover-toggle', 'laptop-lid-toggle']) {
+    const attributes = new Map([['aria-pressed', 'false']]);
+    elements.set(id, Object.assign(new EventTarget(), {
+      disabled: false,
+      setAttribute(name, value) { attributes.set(name, value); },
+      getAttribute(name) { return attributes.get(name); },
+    }));
+  }
   Object.assign(elements.get('scene'), { append() {}, getBoundingClientRect: canvas.getBoundingClientRect });
   document.querySelector = (selector) => elements.get(selector.slice(1)) || null;
   globalThis.document = document;
@@ -155,7 +157,8 @@ for (const [width, height] of [[1440, 900], [390, 844], [844, 390], [320, 568]])
   assert.equal(test.renderer.scene.background.getHexString(), new THREE.Color(background).getHexString(), 'Scene and CSS must share the backdrop color');
   const floor = test.renderer.scene.children.find((object) => object.geometry?.parameters?.width === 200);
   assert.ok(floor?.material.isMeshStandardMaterial && floor.receiveShadow, 'The matte floor must receive shadows');
-  const lights = test.renderer.scene.children.filter((object) => object.isLight);
+  const lights = [];
+  test.renderer.scene.traverse((object) => { if (object.isLight) lights.push(object); });
   assert.equal(lights.filter((light) => light.castShadow).length, 1, 'Only the key light may generate a shadow map');
   assert.ok(lights.some((light) => light.isPointLight && light.distance > 0 && !light.castShadow), 'The screen light must have limited range and no shadows');
   for (const group of test.renderer.scene.children.filter((object) => object.isGroup)) {
@@ -480,4 +483,250 @@ send(coverButton, 'click');
 assert.equal(coverButton.getAttribute('aria-pressed'), 'false', 'Disposal must remove the button listener');
 assert.equal(instancedDisposals, 1, 'Instanced detail buffers must be released exactly once');
 console.log('PASS: camera cover click/touch/button, reversal, focus, cancelled/drag/multi-pointer input, reduced motion, foreground occlusion, context loss, and instance disposal.');
+
+const laptopLid = setup(1440, 900, false);
+const lidPivot = laptopLid.renderer.scene.getObjectByName('laptop-lid-pivot');
+const lidHit = laptopLid.renderer.scene.getObjectByName('lid-toggle-hit-area');
+const lidButton = laptopLid.elements.get('laptop-lid-toggle');
+const lidCoverButton = laptopLid.elements.get('camera-cover-toggle');
+const screenLight = laptopLid.screen.children.find((object) => object.isPointLight);
+const openAngle = lidPivot.rotation.x;
+function lidPoint(test = laptopLid, width = 1440, height = 900) {
+  test.renderer.scene.updateMatrixWorld(true);
+  test.camera.updateMatrixWorld();
+  const hit = test.renderer.scene.getObjectByName('lid-toggle-hit-area');
+  const point = hit.getWorldPosition(new THREE.Vector3()).project(test.camera);
+  return [(point.x + 1) * width / 2, (1 - point.y) * height / 2];
+}
+function lidClick(pointerType = 'mouse') {
+  const [x, y] = lidPoint();
+  laptopLid.pointer('pointerdown', x, y, 1, pointerType);
+  laptopLid.pointer('pointerup', x, y, 1, pointerType);
+}
+const [lidX, lidY] = lidPoint();
+laptopLid.pointer('pointermove', lidX, lidY);
+assert.equal(laptopLid.canvas.style.cursor, 'pointer', 'The notch must advertise its click action');
+const lightBeforeClose = screenLight.getWorldPosition(new THREE.Vector3());
+lidClick();
+assert.equal(lidButton.getAttribute('aria-pressed'), 'true', 'The notch must select the closed target');
+assert.equal(laptopLid.focused, false, 'The notch must not focus the desktop');
+assert.equal(lidCoverButton.disabled, true, 'Closing must disable the camera-cover button');
+laptopLid.renderer.shadowMap.needsUpdate = false;
+laptopLid.tick(3);
+assert.ok(lidPivot.rotation.x > openAngle && lidPivot.rotation.x < Math.PI / 2, 'A physical click must animate closing');
+assert.equal(laptopLid.renderer.shadowMap.needsUpdate, true, 'Lid motion must refresh shadows');
+assert.ok(screenLight.getWorldPosition(new THREE.Vector3()).distanceTo(lightBeforeClose) > 0.01, 'The screen light must travel with the lid');
+laptopLid.click(0.5, 0.5);
+laptopLid.key('Enter');
+send(lidCoverButton, 'click');
+assert.equal(laptopLid.focused, false, 'A moving lid must not allow screen focus');
+assert.equal(lidCoverButton.getAttribute('aria-pressed'), 'false', 'A moving lid must not allow camera-cover input');
+const beforeReverse = lidPivot.rotation.x;
+lidClick('touch');
+assert.equal(lidButton.getAttribute('aria-pressed'), 'false', 'Touch must reverse a closing lid');
+assert.equal(lidPivot.rotation.x, beforeReverse, 'Reversal must not jump the lid');
+laptopLid.tick(14);
+assert.equal(lidPivot.rotation.x, openAngle);
+assert.equal(lidCoverButton.disabled, false, 'Reopening must restore the camera-cover button');
+laptopLid.renderer.shadowMap.needsUpdate = false;
+laptopLid.tick(2);
+assert.equal(laptopLid.renderer.shadowMap.needsUpdate, false, 'A resting lid must not keep refreshing shadows');
+
+for (const cancelEvent of ['pointercancel', 'lostpointercapture']) {
+  const [x, y] = lidPoint();
+  laptopLid.pointer('pointerdown', x, y);
+  laptopLid.pointer(cancelEvent, x, y);
+  laptopLid.pointer('pointerup', x, y);
+  assert.equal(lidButton.getAttribute('aria-pressed'), 'false', 'Cancelled input must not toggle the lid');
+}
+let [notchX, notchY] = lidPoint();
+laptopLid.pointer('pointerdown', notchX, notchY);
+laptopLid.pointer('pointermove', notchX + 20, notchY);
+laptopLid.pointer('pointerup', notchX, notchY);
+assert.equal(lidButton.getAttribute('aria-pressed'), 'false', 'Dragging must not toggle the lid');
+laptopLid.tick(20);
+[notchX, notchY] = lidPoint();
+laptopLid.pointer('pointerdown', notchX, notchY, 1, 'touch');
+laptopLid.pointer('pointerdown', notchX + 10, notchY, 2, 'touch');
+laptopLid.pointer('pointerup', notchX + 10, notchY, 2, 'touch');
+laptopLid.pointer('pointerup', notchX, notchY, 1, 'touch');
+assert.equal(lidButton.getAttribute('aria-pressed'), 'false', 'Multiple pointers must not toggle the lid');
+laptopLid.tick(20);
+const notchBlocker = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.5, 0.2), new THREE.MeshBasicMaterial());
+notchBlocker.position.copy(lidHit.position).add(new THREE.Vector3(0, 0.2, 0.25));
+lidHit.parent.add(notchBlocker);
+laptopLid.tick();
+lidClick();
+assert.equal(lidButton.getAttribute('aria-pressed'), 'false', 'Foreground geometry must occlude the notch');
+notchBlocker.removeFromParent();
+notchBlocker.geometry.dispose();
+notchBlocker.material.dispose();
+
+const beforeLidFocus = laptopLid.camera.position.clone();
+const beforeLidFocusRotation = laptopLid.camera.quaternion.clone();
+laptopLid.key('Enter');
+laptopLid.tick(14);
+assert.equal(laptopLid.focused, true);
+send(lidButton, 'click');
+assert.equal(laptopLid.focused, false, 'Closing from focus must leave the desktop');
+laptopLid.tick(3);
+const returningAngle = lidPivot.rotation.x;
+send(lidButton, 'click');
+assert.equal(lidButton.getAttribute('aria-pressed'), 'false', 'The button must reverse the lid during the camera return');
+assert.equal(lidPivot.rotation.x, returningAngle, 'Reversing during a camera transition must not jump the lid');
+laptopLid.tick(3);
+lidClick();
+assert.equal(lidButton.getAttribute('aria-pressed'), 'true', 'The notch must also work during the camera return');
+laptopLid.tick(14);
+samePose(laptopLid, beforeLidFocus, beforeLidFocusRotation);
+assert.equal(lidPivot.rotation.x, Math.PI / 2, 'The lid must settle flat after returning to the scene');
+laptopLid.click(0.5, 0.5);
+laptopLid.key('Enter');
+laptopLid.key(' ');
+laptopLid.wheel(-120);
+laptopLid.tick(14);
+laptopLid.pinch(1.5);
+laptopLid.tick(14);
+assert.equal(laptopLid.focused, false, 'Clicks, keyboard, wheel, and pinch must not focus a closed screen');
+send(lidCoverButton, 'click');
+assert.equal(lidCoverButton.getAttribute('aria-pressed'), 'false');
+lidClick('touch');
+assert.equal(lidButton.getAttribute('aria-pressed'), 'false', 'The closed lid must leave the notch usable');
+laptopLid.key('Enter');
+assert.equal(laptopLid.focused, false, 'Focus must wait until reopening finishes');
+laptopLid.tick(14);
+laptopLid.click(0.5, 0.5);
+laptopLid.tick(14);
+assert.equal(laptopLid.focused, true, 'Screen picking must work again after reopening');
+centeredScreen(laptopLid);
+send(lidCoverButton, 'click');
+assert.equal(lidCoverButton.getAttribute('aria-pressed'), 'true', 'Camera-cover control must work again after reopening');
+laptopLid.key('Escape');
+laptopLid.tick(14);
+
+lidClick();
+laptopLid.tick(2);
+laptopLid.preference.matches = true;
+send(laptopLid.preference, 'change');
+assert.equal(lidPivot.rotation.x, Math.PI / 2, 'Enabling reduced motion must finish an active lid animation');
+send(lidButton, 'click');
+assert.equal(lidPivot.rotation.x, openAngle, 'The accessible button must reopen immediately with reduced motion');
+assert.equal(lidCoverButton.disabled, false);
+assert.equal(laptopLid.elements.get('announcement').textContent, 'Laptop lid open.');
+laptopLid.preference.matches = false;
+send(laptopLid.preference, 'change');
+send(lidButton, 'click');
+laptopLid.tick(2);
+const beforeHidden = lidPivot.rotation.x;
+laptopLid.document.hidden = true;
+send(laptopLid.document, 'visibilitychange');
+send(lidButton, 'click');
+laptopLid.tick(20);
+assert.equal(lidPivot.rotation.x, beforeHidden, 'Hidden tabs must pause lid motion and ignore button input');
+assert.equal(lidButton.getAttribute('aria-pressed'), 'true');
+laptopLid.document.hidden = false;
+send(laptopLid.document, 'visibilitychange');
+laptopLid.tick();
+assert.equal(lidPivot.rotation.x, beforeHidden, 'Resuming must not jump the animation');
+laptopLid.tick(14);
+assert.equal(lidPivot.rotation.x, Math.PI / 2);
+let lidDisposals = 0;
+lidHit.geometry.addEventListener('dispose', () => lidDisposals++);
+send(laptopLid.canvas, 'webglcontextlost');
+assert.equal(lidButton.disabled, true, 'Context loss must disable the lid button');
+send(lidButton, 'click');
+assert.equal(lidButton.getAttribute('aria-pressed'), 'true');
+laptopLid.close();
+send(lidButton, 'click');
+assert.equal(lidButton.getAttribute('aria-pressed'), 'true', 'Disposal must remove the lid button listener');
+assert.equal(lidDisposals, 1, 'The notch hit geometry must be disposed exactly once');
+
+for (const [width, height] of [[390, 844], [844, 390], [320, 568]]) {
+  const narrow = setup(width, height);
+  const button = narrow.elements.get('laptop-lid-toggle');
+  for (const closed of ['true', 'false']) {
+    const [x, y] = lidPoint(narrow, width, height);
+    assert.ok(x >= 0 && x <= width && y >= 0 && y <= height, 'The notch must fit the narrow viewport');
+    narrow.pointer('pointerdown', x, y, 1, 'touch');
+    narrow.pointer('pointerup', x, y, 1, 'touch');
+    narrow.tick();
+    assert.equal(button.getAttribute('aria-pressed'), closed, 'Narrow viewports must support closing and reopening by touch');
+  }
+  narrow.click(0.5, 0.5);
+  assert.equal(narrow.focused, true, 'Narrow viewports must restore screen picking after reopening');
+  narrow.close();
+}
+console.log('PASS: lid click/touch/button, reversal, shadows and screen light, gestures, occlusion, focus return/gating, reduced motion, narrow viewports, visibility, context loss, and disposal.');
+
+const displayPower = setup(1440, 900, false);
+const displayButton = displayPower.elements.get('laptop-lid-toggle');
+const displayMaterial = displayPower.screen.material;
+const displayGlow = displayPower.screen.children.find((object) => object.isPointLight);
+const desktopTextureVersion = displayMaterial.map.version;
+assert.equal(displayMaterial.color.r, 1, 'The rendered desktop must start fully lit');
+send(displayButton, 'click');
+displayPower.tick(9);
+assert.equal(displayMaterial.color.r, 1, 'Closing must preserve the lit display before reaching the sleep threshold');
+displayPower.tick(1);
+assert.ok(displayMaterial.color.r > 0 && displayMaterial.color.r < 1, 'The frame loop must dim the display after crossing the sleep threshold');
+displayPower.tick(4);
+assert.equal(displayMaterial.color.r, 0, 'A closed laptop must render a black display');
+assert.equal(displayGlow.intensity, 0, 'A closed laptop must stop emitting display glow');
+send(displayButton, 'click');
+displayPower.tick(6);
+assert.equal(displayMaterial.color.r, 0, 'The wake delay must keep the display black as the lid starts reopening');
+displayPower.tick(8);
+const pausedBrightness = displayMaterial.color.r;
+const pausedGlow = displayGlow.intensity;
+assert.ok(pausedBrightness > 0 && pausedBrightness < 1, 'Waking must still be gradual after the lid is fully open');
+displayPower.renderer.shadowMap.needsUpdate = false;
+displayPower.document.hidden = true;
+send(displayPower.document, 'visibilitychange');
+displayPower.tick(20);
+assert.equal(displayMaterial.color.r, pausedBrightness, 'A hidden tab must pause the display fade');
+assert.equal(displayGlow.intensity, pausedGlow, 'A hidden tab must pause the glow fade');
+displayPower.document.hidden = false;
+send(displayPower.document, 'visibilitychange');
+displayPower.tick();
+assert.equal(displayMaterial.color.r, pausedBrightness, 'Resuming a tab must not jump the display brightness');
+displayPower.tick(2);
+assert.ok(displayMaterial.color.r > pausedBrightness, 'The display fade must resume with the frame loop');
+assert.equal(displayPower.renderer.shadowMap.needsUpdate, false, 'Display-only fading must not rebuild shadows');
+assert.ok(Math.abs(displayGlow.intensity - 0.3 * displayMaterial.color.r) < 1e-7, 'The glow must track the rendered display brightness');
+displayPower.key('Enter');
+assert.equal(displayPower.focused, true, 'A fully open lid must allow screen focus during its display fade');
+displayPower.tick(14);
+assert.equal(displayMaterial.color.r, 1, 'The display must finish waking after the hinge stops moving');
+assert.equal(displayMaterial.map.version, desktopTextureVersion, 'Display fading must preserve the desktop texture');
+assert.equal(displayMaterial.opacity, 1);
+send(displayButton, 'click');
+displayPower.tick(14);
+send(displayButton, 'click');
+displayPower.tick(14);
+assert.ok(displayMaterial.color.r > 0 && displayMaterial.color.r < 1);
+displayPower.preference.matches = true;
+send(displayPower.preference, 'change');
+assert.equal(displayMaterial.color.r, 1, 'Enabling reduced motion must finish a fade with an already open lid');
+assert.equal(displayGlow.intensity, 0.3);
+send(displayButton, 'click');
+assert.equal(displayMaterial.color.r, 0, 'Reduced motion must close and switch off immediately');
+assert.equal(displayGlow.intensity, 0);
+send(displayButton, 'click');
+assert.equal(displayMaterial.color.r, 1, 'Reduced motion must reopen without a wake delay');
+displayPower.preference.matches = false;
+send(displayPower.preference, 'change');
+send(displayButton, 'click');
+displayPower.tick(14);
+send(displayButton, 'click');
+displayPower.tick(14);
+const brightnessBeforeLoss = displayMaterial.color.r;
+send(displayPower.canvas, 'webglcontextlost');
+displayPower.tick(20);
+assert.equal(displayMaterial.color.r, brightnessBeforeLoss, 'Context loss must stop the display fade');
+let glowDisposals = 0;
+const disposeGlow = displayGlow.dispose.bind(displayGlow);
+displayGlow.dispose = () => { glowDisposals++; disposeGlow(); };
+displayPower.close();
+assert.equal(glowDisposals, 1, 'Scene disposal must release the model-owned display light exactly once');
+console.log('PASS: rendered display sleep/wake, delayed gradual brightness and glow, fade after hinge settling, paused/resumed tabs, focus, reduced motion, texture preservation, context loss, and light disposal.');
 console.log('NOT CHECKED: browser event ordering, GPU shaders/pixels, screen-reader output, or FPS.');

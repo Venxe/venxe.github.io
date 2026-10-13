@@ -84,9 +84,6 @@ export function createScene(container) {
   const offsets = corners.map((corner) => corner.clone().sub(homeTarget));
   const screenCenter = laptop.screen.getWorldPosition(new THREE.Vector3());
   const screenNormal = laptop.screen.getWorldDirection(new THREE.Vector3());
-  const screenLight = new THREE.PointLight('#b9caff', 0.3, 3, 2);
-  screenLight.position.copy(laptop.screen.localToWorld(new THREE.Vector3(0, -0.55, 0.2)));
-  scene.add(screenLight);
 
   // Include each corner's projected ground shadow when fitting the static map.
   mainLight.target.position.copy(homeTarget);
@@ -145,7 +142,10 @@ export function createScene(container) {
     raycaster.setFromCamera(pointer, camera);
     hits.length = 0;
     raycaster.intersectObjects(selectableObjects, true, hits);
-    const first = hits.find((hit) => hit.object !== laptop.webcam.hitArea);
+    const first = hits.find((hit) => hit.object !== laptop.webcam.hitArea && hit.object !== laptop.lid.hitArea);
+    const lidHit = hits.find((hit) => hit.object === laptop.lid.hitArea);
+    if (lidHit && (!first || first.distance >= lidHit.distance - 1e-6)) return { kind: 'lid' };
+    if (laptop.lid.closed || laptop.lid.moving) return null;
     if (first?.object === laptop.screen) return { kind: 'screen', uv: first.uv };
     const coverHit = hits.find((hit) => hit.object === laptop.webcam.hitArea);
     // The hit area is only active on the front bezel; foreground objects still win.
@@ -160,6 +160,7 @@ export function createScene(container) {
     const textures = new Set();
     scene.traverse((object) => {
       if (object.isInstancedMesh) object.dispose();
+      if (object.isPointLight) object.dispose();
       if (object.geometry) geometries.add(object.geometry);
       if (object.material) {
         for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
@@ -172,7 +173,6 @@ export function createScene(container) {
     for (const material of materials) material.dispose();
     for (const texture of textures) texture.dispose();
     mainLight.shadow.dispose();
-    screenLight.dispose();
     environmentMap.dispose();
     renderer.dispose();
     renderer.domElement.remove();
@@ -182,5 +182,5 @@ export function createScene(container) {
   camera.position.copy(homePose().position);
   controls.update();
   renderer.shadowMap.needsUpdate = true;
-  return { renderer, scene, camera, controls, steam, keyboard: laptop.keyboard, webcam: laptop.webcam, homePose, focusPose, resize, pickAt, dispose };
+  return { renderer, scene, camera, controls, steam, keyboard: laptop.keyboard, webcam: laptop.webcam, lid: laptop.lid, homePose, focusPose, resize, pickAt, dispose };
 }

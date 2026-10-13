@@ -14,4 +14,8 @@ The slim laptop has a perforated cooling grille, side vents, two USB-A sockets, 
 
 `createLaptop()` exposes `ports` records with `id`, `type`, `group`, and `anchor`. Attach future connector models to the appropriate anchor, whose local +Z points out of the socket. The Ethernet group's `ethernet-jaw` pivots around local X; rotating it to 0.5 radians opens the mouth. `webcam.setClosed(boolean)` and `webcam.update(deltaSeconds, reducedMotion)` control the cover.
 
+Click or tap the front-center lifting notch to close or open the laptop lid, or tab to the Laptop lid button. Closing the lid leaves screen focus; screen and camera-cover controls become available again once the lid is fully open. `lid.setClosed(boolean)` and `lid.update(deltaSeconds, reducedMotion)` control the hinge, with `closed` reporting the target state and `moving` reporting an unfinished transition. Reduced motion changes the lid state immediately.
+
+At a lid opening of 20 degrees or less, the display and its glow fade out over 100 ms. At 30 degrees or more, the display waits 150 ms, then fades in over 600 ms, continuing after the hinge settles. Reduced motion bypasses these delays and fades. `lid.update()` continues updating the display while returning whether the hinge geometry changed.
+
 Run `npm run check` to verify imports, geometry budgets, chassis/port clearance, attachment orientation, camera cover behavior, and scene interactions. These checks do not measure GPU pixels or FPS.

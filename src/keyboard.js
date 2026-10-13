@@ -1,13 +1,15 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
+export const KEYBOARD_WELL = Object.freeze({ width: 3.32, depth: 1.4, centerZ: -0.3, radius: 0.004 });
+
 export function createKeyboard(deckY) {
   const group = new THREE.Group();
   const keyMaterial = new THREE.MeshStandardMaterial({ color: '#202630', roughness: 0.6 });
-  const keyboardWidth = 3.26;
-  const keyboardDepth = 1.38;
-  const keyboardCenterZ = -0.3;
-  const well = new THREE.Mesh(new RoundedBoxGeometry(keyboardWidth + 0.06, 0.008, keyboardDepth + 0.02, 2, 0.004),
+  const keyboardWidth = KEYBOARD_WELL.width - 0.06;
+  const keyboardDepth = KEYBOARD_WELL.depth - 0.02;
+  const keyboardCenterZ = KEYBOARD_WELL.centerZ;
+  const well = new THREE.Mesh(new RoundedBoxGeometry(KEYBOARD_WELL.width, 0.008, KEYBOARD_WELL.depth, 2, KEYBOARD_WELL.radius),
     new THREE.MeshStandardMaterial({ color: '#11151d', roughness: 0.68 }));
   well.position.set(0, deckY + 0.0035, keyboardCenterZ);
   well.castShadow = true;

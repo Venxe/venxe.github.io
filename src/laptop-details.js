@@ -1,5 +1,8 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { KEYBOARD_WELL } from './keyboard.js';
+
+export const LAPTOP_SIZE = Object.freeze({ width: 3.6, depth: 2.4 });
 
 const PORT_LAYOUT = [
   { id: 'power-left', type: 'power', side: -1, z: -0.58, y: 0.006, width: 0.054, height: 0.054, radius: 0.027 },
@@ -72,11 +75,12 @@ export function createLaptopBody(deckY, metal, dark) {
   const plastic = new THREE.MeshStandardMaterial({ color: '#171c24', roughness: 0.82 });
   const contacts = new THREE.MeshStandardMaterial({ color: '#a28a54', metalness: 0.8, roughness: 0.42 });
 
-  const deck = rectangle(3.6, 2.4, 0.045);
+  const deck = rectangle(LAPTOP_SIZE.width, LAPTOP_SIZE.depth, 0.045);
+  deck.holes.push(rectangle(KEYBOARD_WELL.width, KEYBOARD_WELL.depth, KEYBOARD_WELL.radius, 0, -KEYBOARD_WELL.centerZ));
   deck.holes.push(rectangle(GRILLE.width, GRILLE.depth, 0.008, 0, -GRILLE.z));
   const top = mesh(extrude(deck, 0.008), metal, group, 'laptop-deck', 0, wallTop);
   top.rotation.x = -Math.PI / 2;
-  const bottom = mesh(extrude(bottomPlate(3.6, 2.4, 0.045), 0.008), metal, group, 'laptop-bottom', 0, -deckY);
+  const bottom = mesh(extrude(bottomPlate(LAPTOP_SIZE.width, LAPTOP_SIZE.depth, 0.045), 0.008), metal, group, 'laptop-bottom', 0, -deckY);
   bottom.rotation.x = -Math.PI / 2;
   const seam = mesh(extrude(bottomPlate(3.45, 2.23, 0.045), 0.008), dark, group, 'body-seam', 0, -deckY - 0.008);
   seam.rotation.x = -Math.PI / 2;

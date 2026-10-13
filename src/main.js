@@ -5,11 +5,12 @@ import { SETTINGS } from './config.js';
 export function start(showError) {
   const container = document.querySelector('#scene');
   const app = createScene(container);
-  const { renderer, scene, camera, controls, steam, keyboard, webcam } = app;
+  const { renderer, scene, camera, controls, steam, keyboard, webcam, lid } = app;
   const canvas = renderer.domElement;
   const hint = document.querySelector('#hint');
   const announcement = document.querySelector('#announcement');
   const cameraCoverButton = document.querySelector('#camera-cover-toggle');
+  const lidButton = document.querySelector('#laptop-lid-toggle');
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const events = new AbortController();
   const listenerOptions = { signal: events.signal };
@@ -85,7 +86,7 @@ export function start(showError) {
     controls.update();
   }
   function openLaptop(pose = { position: camera.position, target: controls.target }) {
-    if (focused || transition || contextLost) return;
+    if (focused || transition || contextLost || lid.closed || lid.moving) return;
     previousPose = { position: pose.position.clone(), target: pose.target.clone() };
     clearDamping();
     touchedCamera = true;
@@ -106,16 +107,27 @@ export function start(showError) {
   }
   function actionAt(x, y) {
     const hit = app.pickAt(x, y);
+    if (hit?.kind === 'lid') return 'lid';
     return hit?.kind === 'webcam' ? 'webcam' : !focused && hit?.kind === 'screen' ? 'screen' : null;
   }
   function toggleCameraCover() {
-    if (transition || contextLost || disposed || document.hidden) return;
+    if (transition || contextLost || disposed || document.hidden || lid.closed || lid.moving) return;
     webcam.setClosed(!webcam.closed);
     cameraCoverButton.setAttribute('aria-pressed', String(webcam.closed));
     if (webcam.update(0, reducedMotion.matches)) renderer.shadowMap.needsUpdate = true;
     announce(webcam.closed ? 'Camera privacy cover closed.' : 'Camera privacy cover open.');
   }
   cameraCoverButton.addEventListener('click', toggleCameraCover, listenerOptions);
+  function toggleLaptopLid() {
+    if (contextLost || disposed || document.hidden) return;
+    lid.setClosed(!lid.closed);
+    if (lid.closed && focused) leaveLaptop();
+    lidButton.setAttribute('aria-pressed', String(lid.closed));
+    if (lid.update(0, reducedMotion.matches)) renderer.shadowMap.needsUpdate = true;
+    cameraCoverButton.disabled = lid.closed || lid.moving;
+    announce(lid.closed ? 'Laptop lid closed.' : 'Laptop lid open.');
+  }
+  lidButton.addEventListener('click', toggleLaptopLid, listenerOptions);
   function resetKeyboard() {
     if (keyboard.reset()) renderer.shadowMap.needsUpdate = true;
   }
@@ -157,28 +169,32 @@ export function start(showError) {
   }, listenerOptions);
   controls.addEventListener('start', () => { touchedCamera = true; });
   canvas.addEventListener('pointerdown', (event) => {
-    if (transition || contextLost || event.button !== 0) return;
+    if (contextLost || event.button !== 0) return;
+    const action = actionAt(event.clientX, event.clientY);
+    if (transition && action !== 'lid') return;
     pointers.set(event.pointerId, {
       x: event.clientX, y: event.clientY, moved: false,
-      action: actionAt(event.clientX, event.clientY),
+      action,
     });
     if (pointers.size > 1) for (const pointer of pointers.values()) pointer.moved = true;
   }, listenerOptions);
   canvas.addEventListener('pointermove', (event) => {
     const pointer = pointers.get(event.pointerId);
     if (pointer && Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y) > SETTINGS.dragThreshold) pointer.moved = true;
-    if (!transition && !contextLost && event.pointerType === 'mouse' && pointers.size === 0) {
-      canvas.style.cursor = actionAt(event.clientX, event.clientY) ? 'pointer' : focused ? 'default' : 'grab';
+    if (!contextLost && event.pointerType === 'mouse' && pointers.size === 0) {
+      const action = actionAt(event.clientX, event.clientY);
+      canvas.style.cursor = action && (!transition || action === 'lid') ? 'pointer' : focused ? 'default' : 'grab';
     }
   }, listenerOptions);
   canvas.addEventListener('pointerup', (event) => {
     const pointer = pointers.get(event.pointerId);
     pointers.delete(event.pointerId);
-    if (!pointer || pointer.moved || transition || contextLost) return;
+    if (!pointer || pointer.moved || contextLost || (transition && pointer.action !== 'lid')) return;
     if (Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y) > SETTINGS.dragThreshold) return;
     if (!pointer.action || pointer.action !== actionAt(event.clientX, event.clientY)) return;
     canvas.focus({ preventScroll: true });
     if (pointer.action === 'webcam') toggleCameraCover();
+    else if (pointer.action === 'lid') toggleLaptopLid();
     else openLaptop();
   }, listenerOptions);
   for (const event of ['pointercancel', 'lostpointercapture']) {
@@ -207,12 +223,16 @@ export function start(showError) {
     } else {
       controls.update(delta);
       const distance = controls.getDistance();
-      if (!focused && distance < lastDistance - 1e-6 && distance <= enterDistance) openLaptop(lastFreePose);
+      if (!focused && !lid.closed && !lid.moving && distance < lastDistance - 1e-6 && distance <= enterDistance) openLaptop(lastFreePose);
       else if (focused && distance > lastDistance + 1e-6 && distance >= focusDistance * SETTINGS.focusExitRatio) leaveLaptop();
       else rememberCamera();
     }
     if (keyboard.update(delta, reducedMotion.matches)) renderer.shadowMap.needsUpdate = true;
     if (webcam.update(delta, reducedMotion.matches)) renderer.shadowMap.needsUpdate = true;
+    if (lid.update(delta, reducedMotion.matches)) {
+      renderer.shadowMap.needsUpdate = true;
+      cameraCoverButton.disabled = lid.closed || lid.moving;
+    }
     if (!reducedMotion.matches) steam.update(elapsed);
     scene.fog.near = controls.getDistance() + 6;
     scene.fog.far = scene.fog.near + 20;
@@ -243,6 +263,10 @@ export function start(showError) {
     steam.points.visible = !reducedMotion.matches;
     if (reducedMotion.matches) finishTransition();
     if (webcam.update(0, reducedMotion.matches)) renderer.shadowMap.needsUpdate = true;
+    if (lid.update(0, reducedMotion.matches)) {
+      renderer.shadowMap.needsUpdate = true;
+      cameraCoverButton.disabled = lid.closed || lid.moving;
+    }
   }, listenerOptions);
   updateControls();
   steam.points.visible = !reducedMotion.matches;
@@ -256,6 +280,7 @@ export function start(showError) {
     event.preventDefault();
     contextLost = true;
     cameraCoverButton.disabled = true;
+    lidButton.disabled = true;
     resetKeyboard();
     renderer.setAnimationLoop(null);
     showError('Graphics rendering was interrupted. Reload the scene to continue.');
