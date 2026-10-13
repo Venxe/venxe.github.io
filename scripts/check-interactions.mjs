@@ -498,10 +498,10 @@ function lidPoint(test = laptopLid, width = 1440, height = 900) {
   const point = hit.getWorldPosition(new THREE.Vector3()).project(test.camera);
   return [(point.x + 1) * width / 2, (1 - point.y) * height / 2];
 }
-function lidClick(pointerType = 'mouse') {
+function lidClick(pointerType = 'mouse', offsetY = 0) {
   const [x, y] = lidPoint();
-  laptopLid.pointer('pointerdown', x, y, 1, pointerType);
-  laptopLid.pointer('pointerup', x, y, 1, pointerType);
+  laptopLid.pointer('pointerdown', x, y + offsetY, 1, pointerType);
+  laptopLid.pointer('pointerup', x, y + offsetY, 1, pointerType);
 }
 const [lidX, lidY] = lidPoint();
 laptopLid.pointer('pointermove', lidX, lidY);
@@ -522,7 +522,7 @@ send(lidCoverButton, 'click');
 assert.equal(laptopLid.focused, false, 'A moving lid must not allow screen focus');
 assert.equal(lidCoverButton.getAttribute('aria-pressed'), 'false', 'A moving lid must not allow camera-cover input');
 const beforeReverse = lidPivot.rotation.x;
-lidClick('touch');
+lidClick('touch', -10);
 assert.equal(lidButton.getAttribute('aria-pressed'), 'false', 'Touch must reverse a closing lid');
 assert.equal(lidPivot.rotation.x, beforeReverse, 'Reversal must not jump the lid');
 laptopLid.tick(14);
@@ -534,18 +534,20 @@ assert.equal(laptopLid.renderer.shadowMap.needsUpdate, false, 'A resting lid mus
 
 for (const cancelEvent of ['pointercancel', 'lostpointercapture']) {
   const [x, y] = lidPoint();
-  laptopLid.pointer('pointerdown', x, y);
-  laptopLid.pointer(cancelEvent, x, y);
-  laptopLid.pointer('pointerup', x, y);
+  laptopLid.pointer('pointerdown', x, y - 10);
+  laptopLid.pointer(cancelEvent, x, y - 10);
+  laptopLid.pointer('pointerup', x, y - 10);
   assert.equal(lidButton.getAttribute('aria-pressed'), 'false', 'Cancelled input must not toggle the lid');
 }
 let [notchX, notchY] = lidPoint();
+notchY -= 10;
 laptopLid.pointer('pointerdown', notchX, notchY);
 laptopLid.pointer('pointermove', notchX + 20, notchY);
 laptopLid.pointer('pointerup', notchX, notchY);
 assert.equal(lidButton.getAttribute('aria-pressed'), 'false', 'Dragging must not toggle the lid');
 laptopLid.tick(20);
 [notchX, notchY] = lidPoint();
+notchY -= 10;
 laptopLid.pointer('pointerdown', notchX, notchY, 1, 'touch');
 laptopLid.pointer('pointerdown', notchX + 10, notchY, 2, 'touch');
 laptopLid.pointer('pointerup', notchX + 10, notchY, 2, 'touch');
@@ -558,6 +560,8 @@ lidHit.parent.add(notchBlocker);
 laptopLid.tick();
 lidClick();
 assert.equal(lidButton.getAttribute('aria-pressed'), 'false', 'Foreground geometry must occlude the notch');
+lidClick('touch', -10);
+assert.equal(lidButton.getAttribute('aria-pressed'), 'false', 'Padding must not select a notch hidden by foreground geometry');
 notchBlocker.removeFromParent();
 notchBlocker.geometry.dispose();
 notchBlocker.material.dispose();
@@ -641,22 +645,43 @@ send(lidButton, 'click');
 assert.equal(lidButton.getAttribute('aria-pressed'), 'true', 'Disposal must remove the lid button listener');
 assert.equal(lidDisposals, 1, 'The notch hit geometry must be disposed exactly once');
 
-for (const [width, height] of [[390, 844], [844, 390], [320, 568]]) {
-  const narrow = setup(width, height);
-  const button = narrow.elements.get('laptop-lid-toggle');
-  for (const closed of ['true', 'false']) {
-    const [x, y] = lidPoint(narrow, width, height);
-    assert.ok(x >= 0 && x <= width && y >= 0 && y <= height, 'The notch must fit the narrow viewport');
-    narrow.pointer('pointerdown', x, y, 1, 'touch');
-    narrow.pointer('pointerup', x, y, 1, 'touch');
-    narrow.tick();
-    assert.equal(button.getAttribute('aria-pressed'), closed, 'Narrow viewports must support closing and reopening by touch');
+for (const [width, height] of [[390, 844], [844, 390], [320, 568], [1440, 900]]) {
+  const target = setup(width, height);
+  const button = target.elements.get('laptop-lid-toggle');
+  for (const [closed, offsetY] of [['true', -10], ['false', 21]]) {
+    const [x, y] = lidPoint(target, width, height);
+    assert.ok(x >= 0 && x <= width && y >= 0 && y <= height, 'The notch must fit the viewport');
+    const before = button.getAttribute('aria-pressed');
+    for (const [dx, dy] of [[0, 23], [16, 16]]) {
+      target.pointer('pointerdown', x + dx, y + dy, 1, 'touch');
+      target.pointer('pointerup', x + dx, y + dy, 1, 'touch');
+      target.tick();
+      assert.equal(button.getAttribute('aria-pressed'), before, 'Touch outside the circular padding must not toggle the lid');
+    }
+    target.pointer('pointermove', x, y + offsetY);
+    assert.equal(target.canvas.style.cursor, 'pointer', 'The padded notch must advertise its click action');
+    target.pointer('pointerdown', x, y + offsetY, 1, 'touch');
+    target.pointer('pointerup', x, y + offsetY, 1, 'touch');
+    target.tick();
+    assert.equal(button.getAttribute('aria-pressed'), closed, 'Touch within 22 CSS pixels must close and reopen the lid across viewport sizes');
   }
-  narrow.click(0.5, 0.5);
-  assert.equal(narrow.focused, true, 'Narrow viewports must restore screen picking after reopening');
-  narrow.close();
+  target.click(0.5, 0.5);
+  assert.equal(target.focused, true, 'Screen picking must work after reopening with padded touch input');
+  target.close();
 }
-console.log('PASS: lid click/touch/button, reversal, shadows and screen light, gestures, occlusion, focus return/gating, reduced motion, narrow viewports, visibility, context loss, and disposal.');
+
+const occludedNotch = setup(390, 844);
+const occludedButton = occludedNotch.elements.get('laptop-lid-toggle');
+send(occludedButton, 'click');
+occludedNotch.camera.position.set(0, 5, -8);
+occludedNotch.tick();
+const [hiddenX, hiddenY] = lidPoint(occludedNotch, 390, 844);
+assert.ok(hiddenX >= 0 && hiddenX <= 390 && hiddenY >= 0 && hiddenY <= 844, 'The occluded notch must still project inside the viewport');
+occludedNotch.pointer('pointerdown', hiddenX, hiddenY - 10, 1, 'touch');
+occludedNotch.pointer('pointerup', hiddenX, hiddenY - 10, 1, 'touch');
+assert.equal(occludedButton.getAttribute('aria-pressed'), 'true', 'Padding must not reach the notch through a closed lid');
+occludedNotch.close();
+console.log('PASS: lid click/touch/button, CSS-pixel touch padding and limits, reversal, shadows and screen light, gestures, occlusion, focus return/gating, reduced motion, viewports, visibility, context loss, and disposal.');
 
 const displayPower = setup(1440, 900, false);
 const displayButton = displayPower.elements.get('laptop-lid-toggle');

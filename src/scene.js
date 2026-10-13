@@ -6,6 +6,8 @@ import { createCoffee } from './coffee.js';
 import { createSteam } from './steam.js';
 import { SETTINGS } from './config.js';
 
+const LID_PICK_RADIUS = 22;
+
 export function createScene(container) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -67,6 +69,7 @@ export function createScene(container) {
 
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
+  const lidCenter = new THREE.Vector3();
   const hits = [];
   const selectableObjects = [laptop.group, coffee.group, floor];
   const initialDirection = new THREE.Vector3(3.8, 4.2, 8).normalize();
@@ -145,12 +148,24 @@ export function createScene(container) {
     const first = hits.find((hit) => hit.object !== laptop.webcam.hitArea && hit.object !== laptop.lid.hitArea);
     const lidHit = hits.find((hit) => hit.object === laptop.lid.hitArea);
     if (lidHit && (!first || first.distance >= lidHit.distance - 1e-6)) return { kind: 'lid' };
-    if (laptop.lid.closed || laptop.lid.moving) return null;
-    if (first?.object === laptop.screen) return { kind: 'screen', uv: first.uv };
-    const coverHit = hits.find((hit) => hit.object === laptop.webcam.hitArea);
-    // The hit area is only active on the front bezel; foreground objects still win.
-    if (coverHit && (!first || first.distance >= coverHit.distance - 1e-6)) return { kind: 'webcam' };
-    return null;
+    if (!laptop.lid.closed && !laptop.lid.moving) {
+      if (first?.object === laptop.screen) return { kind: 'screen', uv: first.uv };
+      const coverHit = hits.find((hit) => hit.object === laptop.webcam.hitArea);
+      // The hit area is only active on the front bezel; foreground objects still win.
+      if (coverHit && (!first || first.distance >= coverHit.distance - 1e-6)) return { kind: 'webcam' };
+    }
+    // Pad the narrow notch in CSS pixels, but only while its center is visible.
+    laptop.lid.hitArea.getWorldPosition(lidCenter).project(camera);
+    if (lidCenter.z < -1 || lidCenter.z > 1 || Math.abs(lidCenter.x) > 1 || Math.abs(lidCenter.y) > 1) return null;
+    const lidX = bounds.left + (lidCenter.x + 1) * bounds.width / 2;
+    const lidY = bounds.top + (1 - lidCenter.y) * bounds.height / 2;
+    if (Math.hypot(clientX - lidX, clientY - lidY) > LID_PICK_RADIUS) return null;
+    pointer.set(lidCenter.x, lidCenter.y);
+    raycaster.setFromCamera(pointer, camera);
+    hits.length = 0;
+    raycaster.intersectObjects(selectableObjects, true, hits);
+    const visibleHit = hits.find((hit) => hit.object !== laptop.webcam.hitArea);
+    return visibleHit?.object === laptop.lid.hitArea ? { kind: 'lid' } : null;
   }
   function dispose() {
     renderer.setAnimationLoop(null);
