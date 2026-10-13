@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { KEYBOARD_WELL } from './keyboard.js';
+import { LAPTOP_SIZE, LAPTOP_DEPTH_SCALE } from './config.js';
 
-export const LAPTOP_SIZE = Object.freeze({ width: 3.6, depth: 2.4 });
+export { LAPTOP_SIZE } from './config.js';
 
 const PORT_LAYOUT = [
   { id: 'power-left', type: 'power', side: -1, z: -0.58, y: 0.006, width: 0.054, height: 0.054, radius: 0.027 },
@@ -10,9 +11,12 @@ const PORT_LAYOUT = [
   { id: 'usb-a-left', type: 'usb-a', side: -1, z: 0.1, y: 0.006, width: 0.135, height: 0.049, radius: 0.005 },
   { id: 'ethernet-right', type: 'ethernet', side: 1, z: -0.58, y: -0.0155, width: 0.145, height: 0.1, radius: 0.003 },
   { id: 'usb-a-right', type: 'usb-a', side: 1, z: 0.12, y: 0.006, width: 0.135, height: 0.049, radius: 0.005 },
-];
+].map((port) => ({ ...port, z: port.z * LAPTOP_DEPTH_SCALE }));
 const ethernet = PORT_LAYOUT.find(({ type }) => type === 'ethernet');
-const GRILLE = { width: 2.7, depth: 0.045, z: -1.035, diameter: 0.006, pitch: 0.012, rows: 3 };
+const GRILLE = { width: 2.7, depth: 0.045, z: -1.035 * LAPTOP_DEPTH_SCALE, diameter: 0.006, pitch: 0.012, rows: 3 };
+const VENT_Z = -0.97 * LAPTOP_DEPTH_SCALE;
+const BODY_CORNER_RADIUS = 0.045;
+const WALL_THICKNESS = 0.008;
 const FOOT_HEIGHT = 0.023;
 const CAMERA_COVER_SECONDS = 0.18;
 
@@ -57,8 +61,8 @@ function bottomPlate(width, depth, radius) {
   const notchTop = -ethernet.z + ethernet.width / 2 + 0.008;
   const path = new THREE.Shape().moveTo(left + radius, bottom).lineTo(right - radius, bottom);
   path.quadraticCurveTo(right, bottom, right, bottom + radius);
-  path.lineTo(right, notchBottom).lineTo(1.8 - 0.15, notchBottom);
-  path.lineTo(1.8 - 0.15, notchTop).lineTo(right, notchTop).lineTo(right, top - radius);
+  path.lineTo(right, notchBottom).lineTo(LAPTOP_SIZE.width / 2 - 0.15, notchBottom);
+  path.lineTo(LAPTOP_SIZE.width / 2 - 0.15, notchTop).lineTo(right, notchTop).lineTo(right, top - radius);
   path.quadraticCurveTo(right, top, right - radius, top).lineTo(left + radius, top);
   path.quadraticCurveTo(left, top, left, top - radius).lineTo(left, bottom + radius);
   path.quadraticCurveTo(left, bottom, left + radius, bottom);
@@ -68,21 +72,25 @@ function bottomPlate(width, depth, radius) {
 export function createLaptopBody(deckY, metal, dark) {
   const group = new THREE.Group();
   group.name = 'laptop-body';
-  const wallBottom = -deckY + 0.008;
-  const wallTop = deckY - 0.008;
+  const halfWidth = LAPTOP_SIZE.width / 2;
+  const halfDepth = LAPTOP_SIZE.depth / 2;
+  const cornerX = halfWidth - BODY_CORNER_RADIUS;
+  const cornerZ = halfDepth - BODY_CORNER_RADIUS;
+  const wallBottom = -deckY + WALL_THICKNESS;
+  const wallTop = deckY - WALL_THICKNESS;
   const wallHeight = wallTop - wallBottom;
   const chrome = new THREE.MeshStandardMaterial({ color: '#abb3be', metalness: 0.9, roughness: 0.29 });
   const plastic = new THREE.MeshStandardMaterial({ color: '#171c24', roughness: 0.82 });
   const contacts = new THREE.MeshStandardMaterial({ color: '#a28a54', metalness: 0.8, roughness: 0.42 });
 
-  const deck = rectangle(LAPTOP_SIZE.width, LAPTOP_SIZE.depth, 0.045);
+  const deck = rectangle(LAPTOP_SIZE.width, LAPTOP_SIZE.depth, BODY_CORNER_RADIUS);
   deck.holes.push(rectangle(KEYBOARD_WELL.width, KEYBOARD_WELL.depth, KEYBOARD_WELL.radius, 0, -KEYBOARD_WELL.centerZ));
   deck.holes.push(rectangle(GRILLE.width, GRILLE.depth, 0.008, 0, -GRILLE.z));
   const top = mesh(extrude(deck, 0.008), metal, group, 'laptop-deck', 0, wallTop);
   top.rotation.x = -Math.PI / 2;
-  const bottom = mesh(extrude(bottomPlate(LAPTOP_SIZE.width, LAPTOP_SIZE.depth, 0.045), 0.008), metal, group, 'laptop-bottom', 0, -deckY);
+  const bottom = mesh(extrude(bottomPlate(LAPTOP_SIZE.width, LAPTOP_SIZE.depth, BODY_CORNER_RADIUS), 0.008), metal, group, 'laptop-bottom', 0, -deckY);
   bottom.rotation.x = -Math.PI / 2;
-  const seam = mesh(extrude(bottomPlate(3.45, 2.23, 0.045), 0.008), dark, group, 'body-seam', 0, -deckY - 0.008);
+  const seam = mesh(extrude(bottomPlate(LAPTOP_SIZE.width - 0.15, LAPTOP_SIZE.depth - 0.17, BODY_CORNER_RADIUS), 0.008), dark, group, 'body-seam', 0, -deckY - 0.008);
   seam.rotation.x = -Math.PI / 2;
 
   const grilleShape = rectangle(GRILLE.width, GRILLE.depth, 0.008);
@@ -99,38 +107,39 @@ export function createLaptopBody(deckY, metal, dark) {
 
   for (const side of [-1, 1]) {
     const sidePorts = PORT_LAYOUT.filter((port) => port.side === side);
-    const panel = new THREE.Shape().moveTo(-1.155, wallBottom);
+    const panel = new THREE.Shape().moveTo(-cornerZ, wallBottom);
     if (side === ethernet.side) {
       const center = -side * ethernet.z;
       panel.lineTo(center - ethernet.width / 2, wallBottom).lineTo(center - ethernet.width / 2, ethernet.y + ethernet.height / 2);
       panel.lineTo(center + ethernet.width / 2, ethernet.y + ethernet.height / 2).lineTo(center + ethernet.width / 2, wallBottom);
     }
-    panel.lineTo(1.155, wallBottom).lineTo(1.155, wallTop).lineTo(-1.155, wallTop).closePath();
+    panel.lineTo(cornerZ, wallBottom).lineTo(cornerZ, wallTop).lineTo(-cornerZ, wallTop).closePath();
     for (const port of sidePorts) {
       if (port.type === 'ethernet') continue;
       panel.holes.push(port.type === 'power' ? circle(port.radius, -side * port.z, port.y)
         : rectangle(port.width, port.height, port.radius, -side * port.z, port.y));
     }
     for (let slot = 0; slot < 11; slot++) {
-      panel.holes.push(rectangle(0.009, 0.045, 0.003, -side * (-0.97 + (slot - 5) * 0.018), 0));
+      panel.holes.push(rectangle(0.009, 0.045, 0.003, -side * (VENT_Z + (slot - 5) * 0.018), 0));
     }
-    const wall = mesh(extrude(panel, 0.008), metal, group, side === -1 ? 'body-left-wall' : 'body-right-wall', side * 1.792);
+    const wall = mesh(extrude(panel, WALL_THICKNESS), metal, group, side === -1 ? 'body-left-wall' : 'body-right-wall', side * (halfWidth - WALL_THICKNESS));
     wall.rotation.y = side * Math.PI / 2;
-    box(group, plastic, `vent-channel-${side === -1 ? 'left' : 'right'}`, 0.006, 0.06, 0.22, side * 1.755, 0, -0.97);
+    box(group, plastic, `vent-channel-${side === -1 ? 'left' : 'right'}`, 0.006, 0.06, 0.22, side * cornerX, 0, VENT_Z);
   }
   for (const side of [-1, 1]) {
-    const wall = mesh(extrude(rectangle(3.51, wallHeight, 0), 0.008), metal, group, side === 1 ? 'body-front-wall' : 'body-back-wall', 0, 0, side * 1.192);
+    const wall = mesh(extrude(rectangle(cornerX * 2, wallHeight, 0), WALL_THICKNESS), metal, group, side === 1 ? 'body-front-wall' : 'body-back-wall', 0, 0, side * (halfDepth - WALL_THICKNESS));
     wall.rotation.y = side === 1 ? 0 : Math.PI;
   }
   const corners = [];
   for (let corner = 0; corner < 4; corner++) {
     const angle = corner * Math.PI / 2;
-    const x = Math.cos(angle + Math.PI / 4) > 0 ? 1.755 : -1.755;
-    const y = Math.sin(angle + Math.PI / 4) > 0 ? 1.155 : -1.155;
-    const path = new THREE.Shape().moveTo(x + 0.045 * Math.cos(angle), y + 0.045 * Math.sin(angle));
-    path.absarc(x, y, 0.045, angle, angle + Math.PI / 2, false);
-    path.lineTo(x + 0.037 * Math.cos(angle + Math.PI / 2), y + 0.037 * Math.sin(angle + Math.PI / 2));
-    path.absarc(x, y, 0.037, angle + Math.PI / 2, angle, true).closePath();
+    const x = Math.cos(angle + Math.PI / 4) > 0 ? cornerX : -cornerX;
+    const y = Math.sin(angle + Math.PI / 4) > 0 ? cornerZ : -cornerZ;
+    const innerRadius = BODY_CORNER_RADIUS - WALL_THICKNESS;
+    const path = new THREE.Shape().moveTo(x + BODY_CORNER_RADIUS * Math.cos(angle), y + BODY_CORNER_RADIUS * Math.sin(angle));
+    path.absarc(x, y, BODY_CORNER_RADIUS, angle, angle + Math.PI / 2, false);
+    path.lineTo(x + innerRadius * Math.cos(angle + Math.PI / 2), y + innerRadius * Math.sin(angle + Math.PI / 2));
+    path.absarc(x, y, innerRadius, angle + Math.PI / 2, angle, true).closePath();
     corners.push(path);
   }
   const cornerWall = mesh(extrude(corners, wallHeight), metal, group, 'body-corners', 0, wallBottom);
@@ -139,7 +148,7 @@ export function createLaptopBody(deckY, metal, dark) {
   const ports = PORT_LAYOUT.map((port) => {
     const portGroup = new THREE.Group();
     portGroup.name = port.id;
-    portGroup.position.set(port.side * 1.8, port.y, port.z);
+    portGroup.position.set(port.side * halfWidth, port.y, port.z);
     portGroup.rotation.y = port.side * Math.PI / 2;
     group.add(portGroup);
     const anchor = new THREE.Object3D();
@@ -208,7 +217,7 @@ export function createLaptopBody(deckY, metal, dark) {
   feet.name = 'rubber-feet';
   feet.castShadow = true;
   for (const [index, [x, z]] of [[-1.42, -0.94], [1.42, -0.94], [-1.42, 0.94], [1.42, 0.94]].entries()) {
-    transform.position.set(x, -deckY - 0.008 - FOOT_HEIGHT / 2, z);
+    transform.position.set(x, -deckY - 0.008 - FOOT_HEIGHT / 2, z * LAPTOP_DEPTH_SCALE);
     transform.updateMatrix();
     feet.setMatrixAt(index, transform.matrix);
   }
@@ -218,7 +227,7 @@ export function createLaptopBody(deckY, metal, dark) {
   const screws = new THREE.InstancedMesh(extrude(screwShape, 0.002), chrome, 6);
   screws.name = 'bottom-screws';
   for (const [index, [x, z]] of [[-1.57, -1.02], [0, -1.02], [1.57, -1.02], [-1.57, 1.02], [0, 1.02], [1.57, 1.02]].entries()) {
-    transform.position.set(x, -deckY - 0.008, z);
+    transform.position.set(x, -deckY - 0.008, z * LAPTOP_DEPTH_SCALE);
     transform.rotation.set(Math.PI / 2, 0, 0);
     transform.updateMatrix();
     screws.setMatrixAt(index, transform.matrix);
@@ -230,7 +239,7 @@ export function createLaptopBody(deckY, metal, dark) {
 export function createWebcam(dark) {
   const group = new THREE.Group();
   group.name = 'webcam';
-  group.position.set(0, 2.152, 0.0525);
+  group.position.set(0, LAPTOP_SIZE.depth - 0.048, 0.0525);
   const railShape = rectangle(0.088, 0.028, 0.008, -0.022);
   railShape.holes.push(circle(0.009));
   mesh(extrude(railShape, 0.0015), dark, group, 'camera-cover-rail');

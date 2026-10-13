@@ -106,8 +106,48 @@ assert.ok(laptop.screen.material.map.image.labels.some(({ text }) => text === 'v
 assert.ok(laptop.screen.material.map.image.labels.some(({ text }) => /\d+ \w+\. \d{2}:\d{2}/.test(text)), 'The screen must draw the system date and time');
 const texture = laptop.screen.material.map;
 assert.equal(texture.image.width, 1200);
-assert.equal(texture.image.height, 790);
+assert.equal(texture.image.height, 675);
+assert.equal(texture.image.width * 9, texture.image.height * 16, 'The desktop texture must be exactly 16:9');
+const { width: displayWidth, height: displayHeight } = laptop.screen.geometry.parameters;
+assert.ok(Math.abs(displayWidth / displayHeight - 16 / 9) < 1e-12, 'The physical display must be 16:9');
+assert.ok(Math.abs(displayWidth / displayHeight - texture.image.width / texture.image.height) < 1e-12, 'Texture pixels must not stretch on the display');
 assert.equal(texture.colorSpace, THREE.SRGBColorSpace);
+
+function localBounds(object) {
+  return new THREE.Box3().setFromObject(object).applyMatrix4(laptop.group.matrixWorld.clone().invert());
+}
+const deckFootprint = localBounds(laptop.group.getObjectByName('laptop-deck'));
+const deckSize = deckFootprint.getSize(new THREE.Vector3());
+assert.ok(Math.abs(deckSize.x - 3.6) < 1e-6 && Math.abs(deckSize.z - 2.06625) < 1e-6, 'The shortened chassis must retain its width');
+const wellFootprint = localBounds(laptop.group.getObjectByName('keyboard-well'));
+const touchpadFootprint = localBounds(laptop.group.getObjectByName('touchpad-rim'));
+const grilleFootprint = localBounds(laptop.group.getObjectByName('cooling-grille'));
+for (const name of ['keyboard-well', 'touchpad-rim', 'touchpad', 'cooling-grille', 'grille-channel',
+  'vent-channel-left', 'vent-channel-right', 'rubber-feet', 'bottom-screws', 'body-seam',
+  'body-left-wall', 'body-right-wall', 'body-front-wall', 'body-back-wall', 'body-corners', 'lid-notch']) {
+  const bounds = localBounds(laptop.group.getObjectByName(name));
+  for (const axis of ['x', 'z']) {
+    assert.ok(bounds.min[axis] >= deckFootprint.min[axis] - 1e-6 && bounds.max[axis] <= deckFootprint.max[axis] + 1e-6,
+      `${name} must stay inside the shortened chassis footprint`);
+  }
+}
+assert.ok(grilleFootprint.max.z < wellFootprint.min.z, 'The grille must remain behind the keyboard without overlap');
+assert.ok(wellFootprint.max.z < touchpadFootprint.min.z, 'The touchpad must remain in front of the keyboard without overlap');
+assert.ok(Math.abs(laptop.screen.position.y - displayHeight / 2 - 0.05) < 1e-12, 'The display must retain a 0.05-unit bottom bezel');
+assert.ok(Math.abs(deckSize.z - laptop.screen.position.y - displayHeight / 2 - 0.07) < 1e-6, 'The display must retain a 0.07-unit top bezel');
+const screenTop = laptop.screen.position.y + displayHeight / 2;
+assert.ok(laptop.webcam.group.position.y + laptop.webcam.hitArea.position.y - laptop.webcam.hitArea.geometry.parameters.height / 2 > screenTop,
+  'The camera cover hit area must stay above the active display');
+for (const bounds of keyBounds) {
+  const local = bounds.clone().applyMatrix4(laptop.group.matrixWorld.clone().invert());
+  for (const axis of ['x', 'z']) {
+    assert.ok(local.min[axis] >= wellFootprint.min[axis] && local.max[axis] <= wellFootprint.max[axis], 'Every keycap must remain inside its well');
+  }
+  const center = bounds.getCenter(new THREE.Vector3());
+  const keyHits = new THREE.Raycaster(new THREE.Vector3(center.x, deckFootprint.max.y + laptop.group.position.y + 0.05, center.z),
+    new THREE.Vector3(0, -1, 0)).intersectObject(laptop.group, true);
+  assert.equal(keyHits.find((hit) => hit.object !== legends)?.object, keys, 'Every key must stay exposed through the resized deck opening');
+}
 for (const group of [laptop.group, coffee.group]) {
   const bottom = new THREE.Box3().setFromObject(group).min.y;
   assert.ok(bottom >= 0 && bottom < 0.005, 'Models must sit just above the floor without intersecting it');
@@ -122,6 +162,8 @@ const shell = ['laptop-deck', 'laptop-bottom', 'body-seam', 'body-left-wall', 'b
 const portRay = new THREE.Raycaster();
 portRay.far = 0.15;
 for (const { id, type, group, anchor } of laptop.ports) {
+  const bounds = localBounds(group);
+  assert.ok(bounds.min.z > deckFootprint.min.z && bounds.max.z < deckFootprint.max.z, `${id} must remain between the front and rear chassis edges`);
   assert.equal(anchor.parent, group, 'Attachment anchors must move with their own port');
   assert.equal(anchor.children.length, 0, 'Ports must start without attached accessories');
   const outward = anchor.getWorldDirection(new THREE.Vector3());
@@ -147,7 +189,8 @@ jaw.rotation.x = 0;
 scene.updateMatrixWorld(true);
 
 const grille = laptop.group.getObjectByName('cooling-grille');
-const grilleOrigin = laptop.group.localToWorld(new THREE.Vector3(0.006, 0, -1.035));
+const grilleOrigin = grille.getWorldPosition(new THREE.Vector3());
+grilleOrigin.x += 0.006;
 grilleOrigin.y = new THREE.Box3().setFromObject(grille).max.y + 0.02;
 const grilleRay = new THREE.Raycaster(grilleOrigin, new THREE.Vector3(0, -1, 0), 0, 0.03);
 assert.equal(grilleRay.intersectObjects([shell[0], grille], false).length, 0, 'A cooling pore must pass through both the grille and the deck');

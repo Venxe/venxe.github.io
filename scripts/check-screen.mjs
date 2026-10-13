@@ -52,6 +52,7 @@ function setup() {
 }
 
 const test = setup();
+assert.equal(test.surface.width * 9, test.surface.height * 16, 'The desktop must use a 16:9 canvas');
 assert.equal(test.control('clock').textContent, '13 Oct. 13:45');
 assert.equal(test.surface.labels.find((label) => label.text === '13 Oct. 13:45').x, 600, 'The clock must be centered independently of side content');
 const status = test.surface.images.slice(0, 3).map((image) => image.src.split('/').at(-1));
@@ -117,7 +118,7 @@ test.click('mute');
 assert.equal(test.control('volume').value, '25');
 const slider = test.point('volume');
 test.desktop.handleInput({ type: 'pointerdown' }, slider);
-test.desktop.handleInput({ type: 'pointermove' }, test.uv(1199, (1 - slider.y) * 790));
+test.desktop.handleInput({ type: 'pointermove' }, test.uv(test.surface.width - 1, (1 - slider.y) * test.surface.height));
 test.desktop.handleInput({ type: 'pointerup' }, slider);
 test.update();
 assert.equal(test.control('volume').value, '100', 'Slider drags must clamp to the maximum');

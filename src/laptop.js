@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { SETTINGS } from './config.js';
+import { SETTINGS, LAPTOP_DEPTH_SCALE } from './config.js';
 import { createScreen } from './screen.js';
 import { createKeyboard } from './keyboard.js';
 import { createLaptopBody, createWebcam, LAPTOP_SIZE } from './laptop-details.js';
@@ -37,9 +37,9 @@ export function createLaptop() {
   keyboard.group.position.y = -0.03;
   group.add(keyboard.group);
 
-  rounded(1.45, 0.005, 0.68, 0.0025, new THREE.MeshStandardMaterial({ color: '#454d5b', metalness: 0.7, roughness: 0.42 }), group, 0, deckY + 0.0025, 0.76);
-  rounded(1.41, 0.006, 0.64, 0.003, metal, group, 0, deckY + 0.0035, 0.76);
-  rounded(0.58, 0.009, 0.04, 0.004, dark, group, 0, deckY - 0.0025, 1.165).name = 'lid-notch';
+  rounded(1.45, 0.005, 0.68 * LAPTOP_DEPTH_SCALE, 0.0025, new THREE.MeshStandardMaterial({ color: '#454d5b', metalness: 0.7, roughness: 0.42 }), group, 0, deckY + 0.0025, 0.76 * LAPTOP_DEPTH_SCALE).name = 'touchpad-rim';
+  rounded(1.41, 0.006, 0.64 * LAPTOP_DEPTH_SCALE, 0.003, metal, group, 0, deckY + 0.0035, 0.76 * LAPTOP_DEPTH_SCALE).name = 'touchpad';
+  rounded(0.58, 0.009, 0.04, 0.004, dark, group, 0, deckY - 0.0025, bodyDepth / 2 - 0.035).name = 'lid-notch';
   const hitArea = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.035, 0.08), new THREE.MeshBasicMaterial({ visible: false }));
   hitArea.name = 'lid-toggle-hit-area';
   // Extend just beyond the front lip so the notch stays reachable with the lid shut.
@@ -67,8 +67,7 @@ export function createLaptop() {
   const desktop = createScreen();
   const { texture } = desktop;
   // Display pixels stay independent of warm studio lights and specular hotspots.
-  const screenWidth = bodyWidth - 0.14;
-  const screenHeight = screenWidth * texture.image.height / texture.image.width;
+  const { screenWidth, screenHeight } = LAPTOP_SIZE;
   const screen = new THREE.Mesh(new THREE.PlaneGeometry(screenWidth, screenHeight), new THREE.MeshBasicMaterial({
     map: texture, toneMapped: false, fog: false,
   }));
@@ -79,7 +78,6 @@ export function createLaptop() {
   screenLight.position.set(0, -0.55, 0.2);
   screen.add(screenLight);
   const webcam = createWebcam(dark);
-  webcam.group.position.y = bodyDepth - 0.048;
   lidContent.add(webcam.group);
   const badgeMaterial = new THREE.MeshStandardMaterial({ color: '#c4cedd', metalness: 0.75, roughness: 0.35 });
   const badge = new THREE.Mesh(new THREE.RingGeometry(0.085, 0.1, 32), badgeMaterial);

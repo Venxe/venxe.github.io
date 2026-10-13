@@ -41,6 +41,7 @@ const THREE = await import('three');
 const { start } = await import('../src/main.js');
 globalThis.Image = TestImage;
 const clockStart = new Date(2026, 9, 13, 13, 45).getTime();
+const VIEWPORTS = [[1920, 1080], [1440, 900], [2560, 1080], [390, 844], [844, 390], [320, 568]];
 let wallTime = clockStart;
 Date.now = () => wallTime;
 
@@ -224,6 +225,7 @@ function fullscreenScreen(test) {
   }
   const size = bounds.getSize(new THREE.Vector2());
   const viewport = test.canvas.getBoundingClientRect();
+  assert.ok(Math.abs(size.x * viewport.width / (size.y * viewport.height) - 16 / 9) < 1e-6, 'The projected desktop must retain the 16:9 aspect ratio');
   assert.ok(Math.abs(Math.max(size.x, size.y) / 2 - 0.99) < 1e-6, 'Screen view must use 99% of the limiting viewport axis');
   assert.ok(Math.abs(size.x * viewport.width / (size.y * viewport.height) - test.screen.material.map.image.width / test.screen.material.map.image.height) < 1e-6, 'The whole desktop must preserve its original proportions');
   const displayed = test.renderer.scene.children;
@@ -246,7 +248,7 @@ function fullscreenScreen(test) {
   for (const id of ['masthead', 'hint', 'camera-cover-toggle', 'laptop-lid-toggle']) assert.equal(test.elements.get(id).hidden, true, 'Fullscreen must hide every HUD control');
 }
 
-for (const [width, height] of [[1440, 900], [390, 844], [844, 390], [320, 568], [2560, 1080]]) {
+for (const [width, height] of VIEWPORTS) {
   const test = setup(width, height);
   assert.equal(test.renderer.options.alpha, false, 'The studio canvas must be opaque');
   assert.equal(test.renderer.pixelRatio, 1.5, 'High-DPI devices must respect the pixel ratio budget');
@@ -329,7 +331,7 @@ for (const [width, height] of [[1440, 900], [390, 844], [844, 390], [320, 568], 
   assert.equal(test.focused, true, 'Clicking the screen must focus it');
   const announcement = test.elements.get('announcement').textContent;
   const focusedPosition = test.camera.position.clone();
-  for (const [u, v] of [[0.5, 0.5], [472 / 1200, 1 - 600 / 720], [728 / 1200, 1 - 600 / 720]]) test.click(u, v);
+  for (const [u, v] of [[0.5, 0.5], [0.4, 0.2], [0.6, 0.2]]) test.click(u, v);
   test.key('ArrowLeft');
   test.key('ArrowRight');
   test.key('Enter');
@@ -1012,7 +1014,7 @@ assert.equal(glowDisposals, 1, 'Scene disposal must release the model-owned disp
 console.log('PASS: rendered display sleep/wake, delayed gradual brightness and glow, fade after hinge settling, paused/resumed tabs, focus, reduced motion, texture preservation, context loss, and light disposal.');
 console.log('NOT CHECKED: browser event ordering, GPU shaders/pixels, screen-reader output, or FPS.');
 
-for (const [width, height] of [[1440, 900], [390, 844], [844, 390], [320, 568]]) {
+for (const [width, height] of VIEWPORTS) {
   const desktopTest = setup(width, height);
   const root = desktopTest.elements.get('desktop-controls');
   const control = (id) => root.querySelector(`[data-control="${id}"]`);
@@ -1023,7 +1025,7 @@ for (const [width, height] of [[1440, 900], [390, 844], [844, 390], [320, 568]])
   const tapText = (text, pointerType = 'mouse') => {
     const label = surface.labels.find((label) => label.text === text);
     assert.ok(label, `The desktop must paint ${text}`);
-    const [x, y] = desktopTest.screenPoint(label.x / 1200, 1 - label.y / 790);
+    const [x, y] = desktopTest.screenPoint(label.x / surface.width, 1 - label.y / surface.height);
     desktopTest.pointer('pointerdown', x, y, 1, pointerType);
     desktopTest.pointer('pointerup', x, y, 1, pointerType);
     desktopTest.tick();
@@ -1032,6 +1034,7 @@ for (const [width, height] of [[1440, 900], [390, 844], [844, 390], [320, 568]])
   assert.equal(control('clock').getAttribute('aria-expanded'), 'true', 'A screen UV touch must open the calendar');
   const calendar = surface.boxes.find((box) => box.radius === 16);
   assert.deepEqual(calendar, { x: 420, y: 44, w: 360, h: 384, radius: 16 }, 'The calendar must keep its desktop size and position in laptop view');
+  assert.ok(calendar.y + calendar.h <= surface.height, 'The calendar must fit inside the shorter desktop');
   tapText('Today', 'touch');
   const beforeResize = desktopTest.screen.material.map.version;
   desktopTest.resize(height, width);
@@ -1045,7 +1048,7 @@ for (const [width, height] of [[1440, 900], [390, 844], [844, 390], [320, 568]])
   assert.equal(desktopTest.mode, 'laptop', 'The first Escape must close the menu without changing camera view');
   assert.equal(control('clock').getAttribute('aria-expanded'), 'false');
   const battery = surface.images.find((image) => image.src.includes('battery-level-80'));
-  desktopTest.click((battery.x + battery.w / 2) / 1200, 1 - (battery.y + battery.h / 2) / 790);
+  desktopTest.click((battery.x + battery.w / 2) / surface.width, 1 - (battery.y + battery.h / 2) / surface.height);
   desktopTest.tick();
   assert.equal(control('settings').getAttribute('aria-expanded'), 'true');
   const panel = surface.boxes.find((box) => box.radius === 16);
@@ -1056,10 +1059,11 @@ for (const [width, height] of [[1440, 900], [390, 844], [844, 390], [320, 568]])
   control('networks').click();
   desktopTest.tick();
   assert.deepEqual(surface.boxes.find((box) => box.radius === 16), { x: 832, y: 44, w: 360, h: 324, radius: 16 }, 'Expanded Wi-Fi settings must keep their desktop dimensions');
+  assert.ok(panel.y + 324 <= surface.height, 'Expanded settings must fit inside the shorter desktop');
   tapText('Coffee Corner', 'touch');
   tapText('Balanced', 'touch');
   assert.equal(control('power').textContent, 'Power Saver', 'The last row of expanded settings must remain reachable');
-  const [panelX, panelY] = desktopTest.screenPoint((panel.x + 4) / 1200, 1 - (panel.y + 4) / 790);
+  const [panelX, panelY] = desktopTest.screenPoint((panel.x + 4) / surface.width, 1 - (panel.y + 4) / surface.height);
   const cameraBeforeWheel = desktopTest.camera.position.clone();
   const consumed = send(desktopTest.canvas, 'wheel', { deltaY: 120, deltaMode: 0, timeStamp: wallTime, clientX: panelX, clientY: panelY });
   desktopTest.tick();
@@ -1071,7 +1075,7 @@ for (const [width, height] of [[1440, 900], [390, 844], [844, 390], [320, 568]])
   desktopTest.tick();
   assert.ok(desktopTest.camera.position.distanceTo(cameraBeforeWheel) < 1e-8, 'Touch drags over panels must not zoom');
   const clockLabel = surface.labels.find((label) => label.text === control('clock').textContent);
-  const [clockX, clockY] = desktopTest.screenPoint(clockLabel.x / 1200, 1 - clockLabel.y / 790);
+  const [clockX, clockY] = desktopTest.screenPoint(clockLabel.x / surface.width, 1 - clockLabel.y / surface.height);
   desktopTest.pointer('pointerdown', clockX - 15, clockY, 1, 'touch');
   desktopTest.pointer('pointerdown', clockX + 15, clockY, 2, 'touch');
   desktopTest.pointer('pointermove', clockX + 200, clockY, 2, 'touch');

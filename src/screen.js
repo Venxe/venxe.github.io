@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { DESKTOP_SIZE } from './config.js';
 
 const NETWORKS = ['Venxe Studio', 'Coffee Corner'];
 const ICON_NAMES = ['audio-volume-high', 'audio-volume-medium', 'audio-volume-low', 'audio-volume-muted',
@@ -14,14 +15,17 @@ function drawWallpaper(context, width, height) {
   background.addColorStop(1, '#3e587d');
   context.fillStyle = background;
   context.fillRect(0, 0, width, height);
+  // Normalize the original wallpaper artwork independently of desktop controls.
+  const y = (value) => height * value / 790;
   for (let i = 0; i < 3; i++) {
-    const ribbon = context.createLinearGradient(0, 210 + i * 105, 1000, height);
+    const ribbon = context.createLinearGradient(0, y(210 + i * 105), width * 5 / 6, height);
     ribbon.addColorStop(0, ['#7394b3', '#496b96', '#1f355c'][i]);
     ribbon.addColorStop(1, ['#7499c1', '#435f8d', '#263752'][i]);
     context.fillStyle = ribbon;
     context.beginPath();
-    context.moveTo(0, 480 + i * 70);
-    context.bezierCurveTo(270, 130 + i * 110, 610, 610 + i * 30, 1200, 210 + i * 155);
+    context.moveTo(0, y(480 + i * 70));
+    context.bezierCurveTo(width * 0.225, y(130 + i * 110),
+      width * 61 / 120, y(610 + i * 30), width, y(210 + i * 155));
     context.lineTo(width, height);
     context.lineTo(0, height);
     context.fill();
@@ -31,8 +35,8 @@ function drawWallpaper(context, width, height) {
 // One desktop state serves the texture, UV picking and native keyboard controls.
 export function createScreen() {
   const canvas = document.createElement('canvas');
-  canvas.width = 1200;
-  canvas.height = 790;
+  canvas.width = DESKTOP_SIZE.width;
+  canvas.height = DESKTOP_SIZE.height;
   const context = canvas.getContext('2d');
   const wallpaper = document.createElement('canvas');
   wallpaper.width = canvas.width;

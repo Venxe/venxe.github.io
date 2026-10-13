@@ -1,16 +1,18 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { LAPTOP_DEPTH_SCALE } from './config.js';
 
-export const KEYBOARD_WELL = Object.freeze({ width: 3.32, depth: 1.4, centerZ: -0.3, radius: 0.004 });
+export const KEYBOARD_WELL = Object.freeze({ width: 3.32, depth: 1.4 * LAPTOP_DEPTH_SCALE, centerZ: -0.3 * LAPTOP_DEPTH_SCALE, radius: 0.004 });
 
 export function createKeyboard(deckY) {
   const group = new THREE.Group();
   const keyMaterial = new THREE.MeshStandardMaterial({ color: '#202630', roughness: 0.6 });
   const keyboardWidth = KEYBOARD_WELL.width - 0.06;
-  const keyboardDepth = KEYBOARD_WELL.depth - 0.02;
+  const keyboardDepth = KEYBOARD_WELL.depth - 0.02 * LAPTOP_DEPTH_SCALE;
   const keyboardCenterZ = KEYBOARD_WELL.centerZ;
   const well = new THREE.Mesh(new RoundedBoxGeometry(KEYBOARD_WELL.width, 0.008, KEYBOARD_WELL.depth, 2, KEYBOARD_WELL.radius),
     new THREE.MeshStandardMaterial({ color: '#11151d', roughness: 0.68 }));
+  well.name = 'keyboard-well';
   well.position.set(0, deckY + 0.0035, keyboardCenterZ);
   well.castShadow = true;
   well.receiveShadow = true;
@@ -53,8 +55,12 @@ export function createKeyboard(deckY) {
       }
     }
   }
+  for (const key of layout) {
+    key.z *= LAPTOP_DEPTH_SCALE;
+    key.depth *= LAPTOP_DEPTH_SCALE;
+  }
   const keyWidth = keyboardWidth / 15 - gap;
-  const keyDepth = 0.195;
+  const keyDepth = 0.195 * LAPTOP_DEPTH_SCALE;
   const keyHeight = 0.028;
   const keyCenterY = deckY + 0.0085 + keyHeight / 2;
   const keys = new THREE.InstancedMesh(new RoundedBoxGeometry(keyWidth, keyHeight, keyDepth, 1, 0.011), keyMaterial, layout.length);
@@ -91,7 +97,7 @@ export function createKeyboard(deckY) {
     const vertex = index * 4;
     legendIndices.push(vertex, vertex + 1, vertex + 2, vertex + 2, vertex + 1, vertex + 3);
     if (!key.label) continue;
-    const fontSize = key.depth < 0.15 ? 15 : key.label.length === 1 ? 24 : 16;
+    const fontSize = key.depth / LAPTOP_DEPTH_SCALE < 0.15 ? 15 : key.label.length === 1 ? 24 : 16;
     labelContext.font = `${fontSize}px "Segoe UI", Arial, sans-serif`;
     labelContext.fillText(key.label,
       (key.x / keyboardWidth + 0.5) * labels.width,
