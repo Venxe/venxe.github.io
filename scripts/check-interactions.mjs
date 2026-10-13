@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
 import { readFile } from 'node:fs/promises';
+import { createElement, createDesktopControls, TestImage } from './test-dom.mjs';
 
 const background = (await readFile(new URL('../styles.css', import.meta.url), 'utf8')).match(/--background:\s*([^;]+)/)[1];
 
@@ -38,7 +39,10 @@ registerHooks({
 
 const THREE = await import('three');
 const { start } = await import('../src/main.js');
-const drawing = new Proxy({}, { get: (_, key) => key === 'createLinearGradient' ? () => ({ addColorStop() {} }) : () => {} });
+globalThis.Image = TestImage;
+const clockStart = new Date(2026, 9, 13, 13, 45).getTime();
+let wallTime = clockStart;
+Date.now = () => wallTime;
 
 function send(target, type, properties = {}) {
   const { timeStamp, ...values } = properties;
@@ -66,9 +70,10 @@ class CanvasTarget extends EventTarget {
 }
 
 function setup(width, height, reduceMotion = true) {
-  const document = Object.assign(new EventTarget(), { hidden: false, createElement: () => ({ getContext: () => drawing }) });
+  wallTime = clockStart;
+  const document = Object.assign(new EventTarget(), { hidden: false, createElement });
   const canvas = Object.assign(new CanvasTarget(), {
-    style: {}, getRootNode: () => document, focus() { document.activeElement = this; },
+    style: {}, getRootNode: () => document, focus() { document.activeElement?.dispatchEvent?.(new Event('blur')); document.activeElement = this; },
     setAttribute() {}, setPointerCapture() {}, releasePointerCapture() {}, remove() {},
     getBoundingClientRect: () => ({ left: 0, top: 0, width, height }),
   });
@@ -86,6 +91,7 @@ function setup(width, height, reduceMotion = true) {
     }));
   }
   Object.assign(elements.get('scene'), { append() {}, getBoundingClientRect: canvas.getBoundingClientRect });
+  elements.set('desktop-controls', createDesktopControls());
   document.querySelector = (selector) => elements.get(selector.slice(1)) || null;
   globalThis.document = document;
   globalThis.window = Object.assign(new EventTarget(), { devicePixelRatio: 3 });
@@ -115,7 +121,7 @@ function setup(width, height, reduceMotion = true) {
   const errors = [];
   start((message) => errors.push(message));
   let time = 0;
-  const tick = (count = 1) => { for (let i = 0; i < count; i++) renderer.loop?.(time += 50); };
+  const tick = (count = 1) => { for (let i = 0; i < count; i++) { wallTime += 50; renderer.loop?.(time += 50); } };
   const keyDown = (value, repeat = false) => {
     const event = send(canvas, 'keydown', { key: value, repeat });
     if (!event.cancelBubble) document.dispatchEvent(event);
@@ -348,7 +354,10 @@ for (const [width, height] of [[1440, 900], [390, 844], [844, 390], [320, 568], 
   test.pinch(0.8);
   assert.equal(test.focused, false, 'A pinch outward must return to free view');
   samePose(test, position, rotation);
-  assert.equal(texture.version, textureVersion, 'The empty desktop texture must not be uploaded again during interactions');
+  assert.equal(texture.version, textureVersion, 'Camera and viewport changes must preserve the fixed-size top bar texture');
+  const idleTextureVersion = texture.version;
+  test.tick(2);
+  assert.equal(texture.version, idleTextureVersion, 'An unchanged desktop must not upload its texture again');
   assert.ok(test.renderer.scene.fog.near > test.camera.position.distanceTo(test.screen.getWorldPosition(new THREE.Vector3())), 'Fog must start behind the models');
   test.key('Enter');
   test.tick();
@@ -959,15 +968,17 @@ displayPower.document.hidden = false;
 send(displayPower.document, 'visibilitychange');
 displayPower.tick();
 assert.equal(displayMaterial.color.r, pausedBrightness, 'Resuming a tab must not jump the display brightness');
+const resumedTextureVersion = displayMaterial.map.version;
 displayPower.tick(2);
 assert.ok(displayMaterial.color.r > pausedBrightness, 'The display fade must resume with the frame loop');
 assert.equal(displayPower.renderer.shadowMap.needsUpdate, false, 'Display-only fading must not rebuild shadows');
+assert.equal(displayMaterial.map.version, resumedTextureVersion, 'Display-only fading must not redraw the desktop');
 assert.ok(Math.abs(displayGlow.intensity - 0.3 * displayMaterial.color.r) < 1e-7, 'The glow must track the rendered display brightness');
 displayPower.key('Enter');
 assert.equal(displayPower.focused, true, 'A fully open lid must allow screen focus during its display fade');
 displayPower.tick(14);
 assert.equal(displayMaterial.color.r, 1, 'The display must finish waking after the hinge stops moving');
-assert.equal(displayMaterial.map.version, desktopTextureVersion, 'Display fading must preserve the desktop texture');
+assert.equal(displayMaterial.map.version, desktopTextureVersion, 'Entering laptop focus must preserve the fixed-size top bar');
 assert.equal(displayMaterial.opacity, 1);
 send(displayButton, 'click');
 displayPower.tick(14);
@@ -1000,3 +1011,76 @@ displayPower.close();
 assert.equal(glowDisposals, 1, 'Scene disposal must release the model-owned display light exactly once');
 console.log('PASS: rendered display sleep/wake, delayed gradual brightness and glow, fade after hinge settling, paused/resumed tabs, focus, reduced motion, texture preservation, context loss, and light disposal.');
 console.log('NOT CHECKED: browser event ordering, GPU shaders/pixels, screen-reader output, or FPS.');
+
+for (const [width, height] of [[1440, 900], [390, 844], [844, 390], [320, 568]]) {
+  const desktopTest = setup(width, height);
+  const root = desktopTest.elements.get('desktop-controls');
+  const control = (id) => root.querySelector(`[data-control="${id}"]`);
+  desktopTest.key('Enter');
+  desktopTest.tick();
+  assert.equal(root.hidden, false, 'Laptop focus must expose native desktop controls');
+  const surface = desktopTest.screen.material.map.image;
+  const tapText = (text, pointerType = 'mouse') => {
+    const label = surface.labels.find((label) => label.text === text);
+    assert.ok(label, `The desktop must paint ${text}`);
+    const [x, y] = desktopTest.screenPoint(label.x / 1200, 1 - label.y / 790);
+    desktopTest.pointer('pointerdown', x, y, 1, pointerType);
+    desktopTest.pointer('pointerup', x, y, 1, pointerType);
+    desktopTest.tick();
+  };
+  tapText(control('clock').textContent, 'touch');
+  assert.equal(control('clock').getAttribute('aria-expanded'), 'true', 'A screen UV touch must open the calendar');
+  desktopTest.key('Escape');
+  desktopTest.tick();
+  assert.equal(desktopTest.mode, 'laptop', 'The first Escape must close the menu without changing camera view');
+  assert.equal(control('clock').getAttribute('aria-expanded'), 'false');
+  const battery = surface.images.find((image) => image.src.includes('battery-level-80'));
+  desktopTest.click((battery.x + battery.w / 2) / 1200, 1 - (battery.y + battery.h / 2) / 790);
+  desktopTest.tick();
+  assert.equal(control('settings').getAttribute('aria-expanded'), 'true');
+  const scale = surface.arcs[0].r / 7;
+  const panel = surface.boxes.find((box) => Math.abs(box.radius - 16 * scale) < 1e-6);
+  assert.ok(panel, 'Quick settings must have a visible panel');
+  const [panelX, panelY] = desktopTest.screenPoint((panel.x + 4 * scale) / 1200, 1 - (panel.y + 4 * scale) / 790);
+  const cameraBeforeWheel = desktopTest.camera.position.clone();
+  const consumed = send(desktopTest.canvas, 'wheel', { deltaY: 120, deltaMode: 0, timeStamp: wallTime, clientX: panelX, clientY: panelY });
+  desktopTest.tick();
+  assert.equal(consumed.defaultPrevented, true, 'Panel wheel events must be consumed before OrbitControls');
+  assert.ok(desktopTest.camera.position.distanceTo(cameraBeforeWheel) < 1e-8, 'Panel scrolling must not change the camera');
+  desktopTest.pointer('pointerdown', panelX, panelY, 1, 'touch');
+  desktopTest.pointer('pointermove', panelX, panelY - 30, 1, 'touch');
+  desktopTest.pointer('pointerup', panelX, panelY - 30, 1, 'touch');
+  desktopTest.tick();
+  assert.ok(desktopTest.camera.position.distanceTo(cameraBeforeWheel) < 1e-8, 'Touch panel scrolling must not zoom');
+  const clockLabel = surface.labels.find((label) => label.text === control('clock').textContent);
+  const [clockX, clockY] = desktopTest.screenPoint(clockLabel.x / 1200, 1 - clockLabel.y / 790);
+  desktopTest.pointer('pointerdown', clockX - 15, clockY, 1, 'touch');
+  desktopTest.pointer('pointerdown', clockX + 15, clockY, 2, 'touch');
+  desktopTest.pointer('pointermove', clockX + 200, clockY, 2, 'touch');
+  desktopTest.tick();
+  desktopTest.pointer('pointerup', clockX + 200, clockY, 2, 'touch');
+  desktopTest.pointer('pointerup', clockX - 15, clockY, 1, 'touch');
+  desktopTest.tick();
+  assert.equal(desktopTest.mode, 'screen', 'A pinch beginning on the top bar must retain the existing zoom gesture');
+  assert.equal(control('settings').getAttribute('aria-expanded'), 'false', 'Changing views must dismiss panels');
+  tapText(control('clock').textContent);
+  assert.equal(control('clock').getAttribute('aria-expanded'), 'true', 'The screen-only scene must route UV picks to the desktop');
+  desktopTest.key('Escape');
+  desktopTest.tick();
+  assert.equal(desktopTest.mode, 'screen');
+  desktopTest.key('Escape');
+  desktopTest.tick();
+  assert.equal(desktopTest.mode, 'laptop');
+  desktopTest.document.hidden = true;
+  send(desktopTest.document, 'visibilitychange');
+  assert.equal(root.hidden, true);
+  wallTime = new Date(2026, 9, 14, 0, 0).getTime();
+  desktopTest.document.hidden = false;
+  send(desktopTest.document, 'visibilitychange');
+  desktopTest.tick();
+  assert.equal(control('clock').textContent, '14 Oct. 00:00', 'Resuming a hidden tab must refresh the real clock');
+  send(desktopTest.canvas, 'webglcontextlost');
+  assert.equal(root.hidden, true, 'Context loss must hide desktop inputs');
+  desktopTest.close();
+}
+console.log('PASS: desktop UV input in both focus views, phone layouts, Escape precedence, wheel/touch menu isolation, pinch from UI, tab-resume clock, context loss, and cleanup.');

@@ -5,13 +5,14 @@ import { SETTINGS } from './config.js';
 export function start(showError) {
   const container = document.querySelector('#scene');
   const app = createScene(container);
-  const { renderer, scene, camera, controls, steam, keyboard, webcam, lid } = app;
+  const { renderer, scene, camera, controls, steam, keyboard, webcam, lid, desktop } = app;
   const canvas = renderer.domElement;
   const hint = document.querySelector('#hint');
   const masthead = document.querySelector('.masthead');
   const announcement = document.querySelector('#announcement');
   const cameraCoverButton = document.querySelector('#camera-cover-toggle');
   const lidButton = document.querySelector('#laptop-lid-toggle');
+  const desktopControls = document.querySelector('#desktop-controls');
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const events = new AbortController();
   const listenerOptions = { signal: events.signal };
@@ -41,8 +42,22 @@ export function start(showError) {
   let contextLost = false;
   let disposed = false;
   let touchedCamera = false;
+  let desktopPointer = null;
 
   function announce(message) { announcement.textContent = message; }
+  desktop.bindControls(desktopControls, announce, events.signal);
+  function desktopInputEnabled() {
+    return viewMode !== 'free' && !transition && !contextLost && !disposed && !document.hidden && !lid.closed && !lid.moving;
+  }
+  function updateDesktopControls() {
+    const hidden = !desktopInputEnabled();
+    if (hidden && desktopControls.contains(document.activeElement)) canvas.focus({ preventScroll: true });
+    desktopControls.hidden = hidden;
+  }
+  function desktopUv(event) {
+    const hit = app.pickAt(event.clientX, event.clientY);
+    return hit?.kind === 'screen' ? hit.uv : null;
+  }
   function applyPose(pose) {
     camera.position.copy(pose.position);
     controls.target.copy(pose.target);
@@ -68,6 +83,7 @@ export function start(showError) {
     container.setAttribute('data-view-mode', viewMode);
     for (const element of [masthead, hint, cameraCoverButton, lidButton]) element.hidden = immersive;
     hint.textContent = viewMode === 'free' ? 'Drag · Zoom · Select screen' : 'Zoom in to view screen · Zoom out to return';
+    updateDesktopControls();
   }
   function returnPose() {
     const pose = previousPose || app.homePose();
@@ -82,6 +98,7 @@ export function start(showError) {
     updateControls();
     controls.update();
     rememberCamera();
+    updateDesktopControls();
   }
   function moveTo(pose) {
     const fromOrbit = new THREE.Spherical().setFromVector3(camera.position.clone().sub(controls.target));
@@ -97,6 +114,9 @@ export function start(showError) {
     };
     controls.enabled = false;
     pointers.clear();
+    desktopPointer = null;
+    desktop.handleInput({ type: 'pointercancel' }, null);
+    updateDesktopControls();
     canvas.style.cursor = viewMode === 'free' ? 'grab' : 'default';
     if (reducedMotion.matches) finishTransition();
   }
@@ -105,6 +125,7 @@ export function start(showError) {
     controls.update();
   }
   function changeView(mode, pose) {
+    desktop.closePanel(false);
     if (activeZoomGesture) activeZoomGesture.consumed = true;
     activeZoomGesture = null;
     if (!transition) clearDamping();
@@ -152,6 +173,11 @@ export function start(showError) {
   // Capture input before OrbitControls so inertia cannot skip a settled stage.
   canvas.addEventListener('wheel', (event) => {
     if (event.deltaY === 0) return;
+    if (desktopInputEnabled() && desktop.handleInput(event, desktopUv(event))) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
     if (!wheelGesture || event.timeStamp - wheelTime >= SETTINGS.zoomGestureIdleMs) wheelGesture = { consumed: false };
     wheelTime = event.timeStamp;
     if (!prepareZoom(wheelGesture)) {
@@ -178,9 +204,43 @@ export function start(showError) {
       if (touchPointers.size === 0) touchGesture = null;
     }, captureOptions);
   }
+  canvas.addEventListener('pointerdown', (event) => {
+    if (touchPointers.size > 1) {
+      desktop.handleInput({ type: 'pointercancel' }, null);
+      desktopPointer = null;
+      return;
+    }
+    if (event.button === 0 && desktopInputEnabled() && desktop.handleInput(event, desktopUv(event))) desktopPointer = event.pointerId;
+    // OrbitControls still records pointers so a second finger can start a pinch.
+  }, captureOptions);
+  canvas.addEventListener('pointermove', (event) => {
+    if (!desktopInputEnabled() || touchPointers.size > 1) return;
+    if (desktopPointer === event.pointerId) {
+      desktop.handleInput(event, desktopUv(event));
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    } else if (pointers.size === 0) desktop.handleInput(event, desktopUv(event));
+  }, captureOptions);
+  canvas.addEventListener('pointerup', (event) => {
+    if (desktopPointer !== event.pointerId) return;
+    desktopPointer = null;
+    if (desktopInputEnabled()) {
+      canvas.focus({ preventScroll: true });
+      desktop.handleInput(event, desktopUv(event));
+    }
+    // Let OrbitControls release its pointer capture on every pointerup.
+  }, captureOptions);
+  for (const type of ['pointercancel', 'lostpointercapture', 'pointerleave']) {
+    canvas.addEventListener(type, (event) => {
+      if (desktopPointer !== event.pointerId && type !== 'pointerleave') return;
+      desktopPointer = null;
+      desktop.handleInput(event, null);
+    }, captureOptions);
+  }
   function actionAt(x, y) {
-    if (viewMode === 'screen') return null;
     const hit = app.pickAt(x, y);
+    if (desktopInputEnabled() && hit?.kind === 'screen' && desktop.hitTest(hit.uv)) return 'desktop';
+    if (viewMode === 'screen') return null;
     if (hit?.kind === 'lid') return 'lid';
     return hit?.kind === 'webcam' ? 'webcam' : viewMode === 'free' && hit?.kind === 'screen' ? 'screen' : null;
   }
@@ -207,6 +267,8 @@ export function start(showError) {
   }
   function resetInput() {
     resetKeyboard();
+    desktopPointer = null;
+    desktop.handleInput({ type: 'pointercancel' }, null);
     pointers.clear();
     touchPointers.clear();
     zoomKeys.clear();
@@ -219,7 +281,7 @@ export function start(showError) {
     if (!event.repeat) keyboard.setPressed(event.code, true);
     if (event.key === 'Escape' && !event.repeat && viewMode !== 'free' && !transition) {
       event.preventDefault();
-      stepBack();
+      if (!desktop.closePanel()) stepBack();
     }
   }, listenerOptions);
   document.addEventListener('keyup', (event) => {
@@ -263,7 +325,7 @@ export function start(showError) {
   controls.addEventListener('start', () => { touchedCamera = true; });
   controls.addEventListener('change', checkZoom);
   canvas.addEventListener('pointerdown', (event) => {
-    if (contextLost || event.button !== 0) return;
+    if (contextLost || event.button !== 0 || desktopPointer === event.pointerId) return;
     const action = actionAt(event.clientX, event.clientY);
     if (transition && action !== 'lid') return;
     pointers.set(event.pointerId, {
@@ -327,6 +389,8 @@ export function start(showError) {
     if (!reducedMotion.matches) steam.update(elapsed);
     scene.fog.near = controls.getDistance() + 6;
     scene.fog.far = scene.fog.near + 20;
+    updateDesktopControls();
+    if (!lid.closed && !lid.moving) desktop.update(Date.now(), viewMode !== 'free' && !transition ? app.screenSize() : null);
     app.render(viewMode === 'screen' && !transition);
   }
   const observer = new ResizeObserver(() => {
@@ -368,6 +432,7 @@ export function start(showError) {
   document.addEventListener('visibilitychange', () => {
     previousTime = null;
     if (document.hidden) resetInput();
+    updateDesktopControls();
     renderer.setAnimationLoop(document.hidden || contextLost ? null : frame);
   }, listenerOptions);
   canvas.addEventListener('webglcontextlost', (event) => {
@@ -375,6 +440,8 @@ export function start(showError) {
     contextLost = true;
     cameraCoverButton.disabled = true;
     lidButton.disabled = true;
+    desktop.closePanel(false);
+    updateDesktopControls();
     resetInput();
     renderer.setAnimationLoop(null);
     showError('Graphics rendering was interrupted. Reload the scene to continue.');

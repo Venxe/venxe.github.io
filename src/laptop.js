@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { SETTINGS } from './config.js';
-import { createScreenTexture } from './screen.js';
+import { createScreen } from './screen.js';
 import { createKeyboard } from './keyboard.js';
 import { createLaptopBody, createWebcam, LAPTOP_SIZE } from './laptop-details.js';
 
@@ -64,7 +64,8 @@ export function createLaptop() {
   rounded(bodyWidth, bodyDepth, 0.085, 0.035, metal, lidContent, 0, bodyDepth / 2, 0).name = 'laptop-lid';
   rounded(bodyWidth - 0.08, bodyDepth - 0.054, 0.008, 0.004, dark, lidContent, 0, bodyDepth / 2, 0.0465);
 
-  const texture = createScreenTexture();
+  const desktop = createScreen();
+  const { texture } = desktop;
   // Display pixels stay independent of warm studio lights and specular hotspots.
   const screenWidth = bodyWidth - 0.14;
   const screenHeight = screenWidth * texture.image.height / texture.image.width;
@@ -148,5 +149,5 @@ export function createLaptop() {
     },
   };
 
-  return { group, screen, keyboard, ports: body.ports, webcam, lid };
+  return { group, screen, desktop, keyboard, ports: body.ports, webcam, lid };
 }

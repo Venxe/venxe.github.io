@@ -213,6 +213,10 @@ export function createScene(container) {
     laptop.group.updateMatrixWorld(true);
     raycaster.setFromCamera(pointer, camera);
     hits.length = 0;
+    if (screenOnlyRendered) {
+      raycaster.intersectObject(desktop, false, hits);
+      return hits[0] ? { kind: 'screen', uv: hits[0].uv } : null;
+    }
     raycaster.intersectObjects(selectableObjects, true, hits);
     const first = hits.find((hit) => hit.object !== laptop.webcam.hitArea && hit.object !== laptop.lid.hitArea);
     const lidHit = hits.find((hit) => hit.object === laptop.lid.hitArea);
@@ -236,9 +240,22 @@ export function createScene(container) {
     const visibleHit = hits.find((hit) => hit.object !== laptop.webcam.hitArea);
     return visibleHit?.object === laptop.lid.hitArea ? { kind: 'lid' } : null;
   }
+  function screenSize() {
+    const bounds = renderer.domElement.getBoundingClientRect();
+    const { width, height } = laptop.screen.geometry.parameters;
+    camera.updateMatrixWorld();
+    laptop.screen.updateWorldMatrix(true, false);
+    const corners = [[-1, 1], [1, 1], [-1, -1], [1, -1]].map(([x, y]) => {
+      const point = laptop.screen.localToWorld(new THREE.Vector3(x * width / 2, y * height / 2, 0)).project(camera);
+      return new THREE.Vector2(point.x * bounds.width / 2, point.y * bounds.height / 2);
+    });
+    return { width: Math.min(corners[0].distanceTo(corners[1]), corners[2].distanceTo(corners[3])),
+      height: Math.min(corners[0].distanceTo(corners[2]), corners[1].distanceTo(corners[3])) };
+  }
   function dispose() {
     renderer.setAnimationLoop(null);
     controls.dispose();
+    laptop.desktop.dispose();
     const geometries = new Set();
     const materials = new Set();
     const textures = new Set();
@@ -266,5 +283,5 @@ export function createScene(container) {
   camera.position.copy(homePose().position);
   controls.update();
   renderer.shadowMap.needsUpdate = true;
-  return { renderer, scene, camera, controls, steam, keyboard: laptop.keyboard, webcam: laptop.webcam, lid: laptop.lid, homePose, laptopPose, screenPose, render, resize, pickAt, dispose };
+  return { renderer, scene, camera, controls, steam, keyboard: laptop.keyboard, webcam: laptop.webcam, lid: laptop.lid, desktop: laptop.desktop, homePose, laptopPose, screenPose, screenSize, render, resize, pickAt, dispose };
 }

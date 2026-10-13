@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
+import { createElement, TestImage } from './test-dom.mjs';
 
 // Use the same vendored modules as the browser import map.
 registerHooks({
@@ -11,15 +12,8 @@ registerHooks({
 });
 
 // Model construction needs a 2D canvas. Pixel output is deliberately not tested here.
-const drawnLabels = [];
-const context = new Proxy({}, { get: (_, key) => {
-  if (key === 'createLinearGradient') return () => ({ addColorStop() {} });
-  if (key === 'fillText') return (text, x, y) => {
-    drawnLabels.push({ text, x, y });
-  };
-  return () => {};
-} });
-globalThis.document = { createElement: () => ({ width: 0, height: 0, getContext: () => context }) };
+globalThis.document = { createElement };
+globalThis.Image = TestImage;
 const THREE = await import('three');
 const { createLaptop } = await import('../src/laptop.js');
 const { createCoffee } = await import('../src/coffee.js');
@@ -54,7 +48,7 @@ for (let index = 0; index < keys.count; index++) {
   assert.ok(size.x > 0 && size.z > 0, 'Every key must have a positive width and depth');
   for (const previous of keyBounds.slice(0, -1)) assert.ok(!bounds.intersectsBox(previous), 'Keycaps must not overlap');
 }
-const labelledKeys = drawnLabels.filter(({ text }) => text !== 'venxe').map(({ text, x, y }) => {
+const labelledKeys = legends.material.map.image.labels.map(({ text, x, y }) => {
   const uvs = legends.geometry.attributes.uv;
   const positions = legends.geometry.attributes.position;
   const drawnUv = new THREE.Vector2(x / legends.material.map.image.width, 1 - y / legends.material.map.image.height);
@@ -108,8 +102,8 @@ for (const u of [0.01, 0.5, 0.99]) {
     assert.ok(hit.uv.distanceTo(new THREE.Vector2(u, v)) < 1e-6, 'Screen UVs must remain usable for future desktop interactions');
   }
 }
-assert.ok(drawnLabels.some(({ text }) => text === 'venxe'), 'The screen must draw the desktop brand');
-assert.equal(drawnLabels.length, labelledKeys.length + 1, 'Only keyboard legends and the desktop brand may be drawn');
+assert.ok(laptop.screen.material.map.image.labels.some(({ text }) => text === 'venxe'), 'The screen must draw the desktop brand');
+assert.ok(laptop.screen.material.map.image.labels.some(({ text }) => /\d+ \w+\. \d{2}:\d{2}/.test(text)), 'The screen must draw the system date and time');
 const texture = laptop.screen.material.map;
 assert.equal(texture.image.width, 1200);
 assert.equal(texture.image.height, 790);
