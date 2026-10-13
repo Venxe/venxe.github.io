@@ -108,7 +108,14 @@ export function createScene(container) {
   const frameBounds = new THREE.Box3().setFromPoints(laptopFrame);
   const screenCenter = laptop.screen.getWorldPosition(new THREE.Vector3());
   const screenNormal = laptop.screen.getWorldDirection(new THREE.Vector3());
-  const screenUp = new THREE.Vector3(0, 1, 0).transformDirection(laptop.screen.matrixWorld);
+  const screenScene = new THREE.Scene();
+  screenScene.background = scene.background;
+  const desktop = new THREE.Mesh(laptop.screen.geometry, laptop.screen.material);
+  desktop.name = laptop.screen.name;
+  desktop.matrixAutoUpdate = false;
+  desktop.matrix.copy(laptop.screen.matrixWorld);
+  screenScene.add(desktop);
+  let screenOnlyRendered = false;
 
   // Include each corner's projected ground shadow when fitting the static map.
   mainLight.target.position.copy(homeTarget);
@@ -172,10 +179,15 @@ export function createScene(container) {
   function screenPose() {
     const halfFov = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
     const { width, height } = laptop.screen.geometry.parameters;
-    // Anchor cropping at the top so the taskbar stays visible on wide viewports.
-    const distance = Math.min(width / (2 * halfFov * camera.aspect), height / (2 * halfFov)) * SETTINGS.screenCoverRatio;
-    const target = screenCenter.clone().addScaledVector(screenUp, height / 2 - halfFov * distance / SETTINGS.screenCoverRatio);
+    // Fit every screen edge in both orientations, with a small clipping margin.
+    const distance = Math.max(width / (2 * halfFov * camera.aspect), height / (2 * halfFov)) / SETTINGS.screenFitRatio;
+    const target = screenCenter.clone();
     return { target, position: target.clone().addScaledVector(screenNormal, distance) };
+  }
+  function render(screenOnly = false) {
+    if (screenOnlyRendered && !screenOnly) renderer.shadowMap.needsUpdate = true;
+    screenOnlyRendered = screenOnly;
+    renderer.render(screenOnly ? screenScene : scene, camera);
   }
   function resize() {
     const { width, height } = container.getBoundingClientRect();
@@ -254,5 +266,5 @@ export function createScene(container) {
   camera.position.copy(homePose().position);
   controls.update();
   renderer.shadowMap.needsUpdate = true;
-  return { renderer, scene, camera, controls, steam, keyboard: laptop.keyboard, webcam: laptop.webcam, lid: laptop.lid, homePose, laptopPose, screenPose, resize, pickAt, dispose };
+  return { renderer, scene, camera, controls, steam, keyboard: laptop.keyboard, webcam: laptop.webcam, lid: laptop.lid, homePose, laptopPose, screenPose, render, resize, pickAt, dispose };
 }

@@ -9,7 +9,7 @@ export const SETTINGS = Object.freeze({
   focusMinRatio: 0.94,
   focusFrameRatio: 0.98,
   focusElevation: Math.PI / 12,
-  screenCoverRatio: 0.995,
+  screenFitRatio: 0.99,
   zoomGestureIdleMs: 200,
   transitionSeconds: 0.65,
   dragThreshold: 6,

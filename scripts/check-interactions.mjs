@@ -126,6 +126,7 @@ function setup(width, height, reduceMotion = true) {
   const wheel = (deltaY, deltaMode = 0) => send(canvas, 'wheel', { deltaY, deltaMode, timeStamp: time, clientX: width / 2, clientY: height / 2 });
   const pointer = (type, x, y, id = 1, pointerType = 'mouse') => send(canvas, type, { clientX: x, clientY: y, pageX: x, pageY: y, pointerId: id, pointerType, button: 0, timeStamp: time });
   tick();
+  const workspace = renderer.scene;
   const screen = renderer.scene.getObjectByName('laptop-screen');
   assert.ok(screen, 'The rendered scene must contain the laptop screen');
   const screenPoint = (u, v) => {
@@ -150,7 +151,7 @@ function setup(width, height, reduceMotion = true) {
     pointer('pointerup', endX, y, 2, 'touch');
     pointer('pointerup', x - 30, y, 1, 'touch');
   };
-  return { renderer, screen, elements, document, window, canvas, preference, errors, tick, key, keyDown, keyUp, wheel, pointer, click, pinch, screenPoint,
+  return { renderer, workspace, screen, elements, document, window, canvas, preference, errors, tick, key, keyDown, keyUp, wheel, pointer, click, pinch, screenPoint,
     get camera() { return renderer.camera; },
     get mode() { return elements.get('scene').getAttribute('data-view-mode'); },
     get focused() { return this.mode !== 'free'; },
@@ -168,7 +169,7 @@ function framedLaptop(test) {
   assert.equal(test.mode, 'laptop');
   test.camera.updateMatrixWorld();
   let group = test.screen;
-  while (group.parent !== test.renderer.scene) group = group.parent;
+  while (group.parent !== test.workspace) group = group.parent;
   const outline = new THREE.Box2();
   const instance = new THREE.Matrix4();
   group.traverse((mesh) => {
@@ -201,26 +202,39 @@ function fullscreenScreen(test) {
   assert.equal(test.mode, 'screen');
   test.camera.updateMatrixWorld();
   const point = test.screen.getWorldPosition(new THREE.Vector3()).project(test.camera);
-  assert.ok(Math.abs(point.x) < 1e-8, 'Fullscreen must keep the desktop horizontally centered');
+  assert.ok(Math.abs(point.x) < 1e-8 && Math.abs(point.y) < 1e-8, 'Screen view must center the entire desktop on both axes');
   const normal = test.screen.getWorldDirection(new THREE.Vector3());
   assert.ok(test.camera.getWorldDirection(new THREE.Vector3()).dot(normal) < -0.999999, 'Focus must face the screen');
   const { width, height } = test.screen.geometry.parameters;
-  const top = test.screen.localToWorld(new THREE.Vector3(0, height / 2, 0)).project(test.camera);
-  assert.ok(top.y >= 1 && top.y <= 1.006, 'Fullscreen must anchor the top of the desktop at the viewport edge');
   const taskbarCenter = test.screen.localToWorld(new THREE.Vector3(0, height / 2 - height * 18 / test.screen.material.map.image.height, 0)).project(test.camera);
   assert.ok(taskbarCenter.y > -1 && taskbarCenter.y < 1, 'The top taskbar content must remain visible in fullscreen');
+  const bounds = new THREE.Box2();
   for (const x of [-width / 2, width / 2]) {
     for (const y of [-height / 2, height / 2]) {
       const corner = test.screen.localToWorld(new THREE.Vector3(x, y, 0)).project(test.camera);
-      assert.ok(Math.abs(corner.x) >= 1.004 && Math.abs(corner.y) >= 1.004, 'The desktop must cover the viewport in both axes');
+      assert.ok(Math.abs(corner.x) <= 0.990001 && Math.abs(corner.y) <= 0.990001 && corner.z > -1 && corner.z < 1, 'Every screen corner, including the bottom and sides, must fit inside the viewport');
+      bounds.expandByPoint(new THREE.Vector2(corner.x, corner.y));
     }
   }
+  const size = bounds.getSize(new THREE.Vector2());
+  const viewport = test.canvas.getBoundingClientRect();
+  assert.ok(Math.abs(Math.max(size.x, size.y) / 2 - 0.99) < 1e-6, 'Screen view must use 99% of the limiting viewport axis');
+  assert.ok(Math.abs(size.x * viewport.width / (size.y * viewport.height) - test.screen.material.map.image.width / test.screen.material.map.image.height) < 1e-6, 'The whole desktop must preserve its original proportions');
+  const displayed = test.renderer.scene.children;
+  assert.equal(displayed.length, 1, 'Screen view must render only the desktop over a plain background');
+  const desktop = displayed[0];
+  assert.ok(desktop.isMesh, 'Screen view must render the existing desktop as a mesh');
+  assert.equal(desktop.geometry, test.screen.geometry, 'Both views must share the display geometry');
+  assert.equal(desktop.material, test.screen.material, 'Both views must share the display material and texture');
+  assert.ok(desktop.matrixWorld.equals(test.screen.matrixWorld), 'Screen view must use the open display world transform');
+  assert.equal(test.renderer.scene.background.getHexString(), test.workspace.background.getHexString(), 'Screen margins must use the existing dark background');
   const raycaster = new THREE.Raycaster();
-  for (const x of [-1, 0, 1]) {
-    for (const y of [-1, 0, 1]) {
+  raycaster.setFromCamera(new THREE.Vector2(), test.camera);
+  assert.equal(raycaster.intersectObjects(displayed, true)[0]?.object, desktop, 'The centered desktop must be the only rendered surface');
+  for (const x of [-1, 1]) {
+    for (const y of [-1, 1]) {
       raycaster.setFromCamera(new THREE.Vector2(x, y), test.camera);
-      const hit = raycaster.intersectObjects(test.renderer.scene.children, true).find((entry) => entry.object.isMesh && entry.object.material.visible);
-      assert.equal(hit?.object, test.screen, 'Only desktop pixels must be visible at the viewport corners and center');
+      assert.equal(raycaster.intersectObjects(displayed, true).length, 0, 'The viewport margins must show the background, not scene geometry');
     }
   }
   for (const id of ['masthead', 'hint', 'camera-cover-toggle', 'laptop-lid-toggle']) assert.equal(test.elements.get(id).hidden, true, 'Fullscreen must hide every HUD control');
@@ -251,7 +265,11 @@ for (const [width, height] of [[1440, 900], [390, 844], [844, 390], [320, 568], 
   const texture = test.screen.material.map;
   const textureVersion = texture.version;
   let textureDisposals = 0;
+  let geometryDisposals = 0;
+  let materialDisposals = 0;
   texture.addEventListener('dispose', () => textureDisposals++);
+  test.screen.geometry.addEventListener('dispose', () => geometryDisposals++);
+  test.screen.material.addEventListener('dispose', () => materialDisposals++);
   test.key('ArrowLeft');
   test.tick();
   let position;
@@ -277,10 +295,17 @@ for (const [width, height] of [[1440, 900], [390, 844], [844, 390], [320, 568], 
   test.wheel(-120);
   test.tick();
   fullscreenScreen(test);
+  test.renderer.shadowMap.needsUpdate = false;
   test.tick(5);
+  assert.equal(test.renderer.shadowMap.needsUpdate, false, 'An idle screen view must not request scene shadows');
   test.wheel(120);
   test.tick();
   framedLaptop(test);
+  assert.equal(test.renderer.scene, test.workspace, 'Leaving screen view must render the original workspace');
+  assert.equal(test.renderer.shadowMap.needsUpdate, true, 'Returning to the workspace must refresh its shadows');
+  test.renderer.shadowMap.needsUpdate = false;
+  test.tick();
+  assert.equal(test.renderer.shadowMap.needsUpdate, false, 'The restored idle workspace must not repeatedly refresh shadows');
   assert.ok(test.camera.position.distanceTo(focusPosition) < 1e-8, 'Leaving fullscreen must restore the initial laptop framing');
   test.wheel(240);
   test.tick();
@@ -338,6 +363,8 @@ for (const [width, height] of [[1440, 900], [390, 844], [844, 390], [320, 568], 
   samePose(test, position, rotation);
   test.close();
   assert.equal(textureDisposals, 1, 'The desktop texture must be disposed exactly once');
+  assert.equal(geometryDisposals, 1, 'The shared display geometry must be disposed exactly once');
+  assert.equal(materialDisposals, 1, 'The shared display material must be disposed exactly once');
   assert.equal(test.renderer.disposed, true, 'Leaving the page must release the renderer');
 }
 
@@ -377,6 +404,7 @@ assert.equal(animated.focused, true, 'Resizing must not exit focus');
 framedLaptop(animated);
 animated.key('+');
 animated.tick(5);
+assert.equal(animated.renderer.scene, animated.workspace, 'Entry transitions must continue rendering the workspace');
 animated.resize(390, 844);
 animated.tick(20);
 fullscreenScreen(animated);
@@ -384,6 +412,8 @@ animated.resize(844, 390);
 animated.tick();
 fullscreenScreen(animated);
 animated.key('-');
+animated.tick();
+assert.equal(animated.renderer.scene, animated.workspace, 'Exit transitions must restore the workspace immediately');
 animated.tick(20);
 framedLaptop(animated);
 animated.key('-');
@@ -519,7 +549,7 @@ for (const reduced of [true, false]) {
   samePose(gestures, savedPosition, savedRotation);
   gestures.close();
 }
-console.log('PASS: two-stage framing and screen coverage, HUD visibility/focus, wheel accumulation/inertia and delta modes, held zoom/Escape keys, continuous pinch/release, fullscreen resize, reduced motion, and saved scene return.');
+console.log('PASS: complete desktop fitting and proportions, plain margins, shared display resources, two-stage gestures, HUD visibility/focus, scene restoration and shadows, resize, reduced motion, and saved camera return.');
 
 const typing = setup(1440, 900, false);
 const keyboardMesh = typing.renderer.scene.getObjectByName('keyboard');

@@ -67,7 +67,7 @@ export function start(showError) {
     }
     container.setAttribute('data-view-mode', viewMode);
     for (const element of [masthead, hint, cameraCoverButton, lidButton]) element.hidden = immersive;
-    hint.textContent = viewMode === 'free' ? 'Drag · Zoom · Select screen' : 'Zoom in for fullscreen · Zoom out to return';
+    hint.textContent = viewMode === 'free' ? 'Drag · Zoom · Select screen' : 'Zoom in to view screen · Zoom out to return';
   }
   function returnPose() {
     const pose = previousPose || app.homePose();
@@ -114,8 +114,8 @@ export function start(showError) {
     updateControls();
     moveTo(pose);
     announce(mode === 'free' ? 'Returned to the previous scene view.' : mode === 'laptop'
-      ? 'The laptop and keyboard are now in focus. Zoom in again for fullscreen. Zoom out or press Escape to return to the scene.'
-      : 'The laptop desktop now fills the viewport. Zoom out or press Escape to return to the laptop view.');
+      ? 'The laptop and keyboard are now in focus. Zoom in again to view the entire desktop. Zoom out or press Escape to return to the scene.'
+      : 'The entire laptop desktop is now in view. Zoom out or press Escape to return to the laptop view.');
   }
   function openLaptop(pose = { position: camera.position, target: controls.target }) {
     if (viewMode !== 'free' || transition || contextLost || lid.closed || lid.moving) return;
@@ -327,7 +327,7 @@ export function start(showError) {
     if (!reducedMotion.matches) steam.update(elapsed);
     scene.fog.near = controls.getDistance() + 6;
     scene.fog.far = scene.fog.near + 20;
-    renderer.render(scene, camera);
+    app.render(viewMode === 'screen' && !transition);
   }
   const observer = new ResizeObserver(() => {
     if (disposed || contextLost) return;
