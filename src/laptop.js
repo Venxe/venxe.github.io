@@ -3,6 +3,7 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { SETTINGS } from './config.js';
 import { createScreenTexture } from './screen.js';
 import { createKeyboard } from './keyboard.js';
+import { createLaptopBody, createWebcam } from './laptop-details.js';
 
 export function createLaptop() {
   const group = new THREE.Group();
@@ -18,22 +19,23 @@ export function createLaptop() {
     return mesh;
   }
 
-  const deckY = 0.0625;
-  rounded(3.6, deckY * 2, 2.4, 0.045, metal, group, 0, 0, 0).name = 'laptop-body';
-  rounded(3.45, 0.015, 2.23, 0.007, dark, group, 0, -deckY - 0.0025, 0);
+  const deckY = 0.0475;
+  const body = createLaptopBody(deckY, metal, dark);
+  group.add(body.group);
   const keyboard = createKeyboard(deckY);
   group.add(keyboard.group);
 
   rounded(1.45, 0.005, 0.68, 0.0025, new THREE.MeshStandardMaterial({ color: '#454d5b', metalness: 0.7, roughness: 0.42 }), group, 0, deckY + 0.0025, 0.76);
   rounded(1.41, 0.006, 0.64, 0.003, metal, group, 0, deckY + 0.0035, 0.76);
-  rounded(0.58, 0.009, 0.04, 0.004, dark, group, 0, 0.06, 1.165);
+  rounded(0.58, 0.009, 0.04, 0.004, dark, group, 0, deckY - 0.0025, 1.165);
 
-  const hinge = new THREE.Mesh(new THREE.CylinderGeometry(0.053, 0.053, 2.98, 16), dark);
+  const hingeY = deckY + 0.019;
+  const hinge = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 2.98, 16), dark);
   hinge.rotation.z = Math.PI / 2;
-  hinge.position.set(0, 0.085, -1.09);
+  hinge.position.set(0, hingeY, -1.12);
   group.add(hinge);
   const lid = new THREE.Group();
-  lid.position.set(0, 0.085, -1.09);
+  lid.position.set(0, hingeY, -1.12);
   lid.rotation.x = THREE.MathUtils.degToRad(-20);
   group.add(lid);
   rounded(3.6, 2.2, 0.085, 0.035, metal, lid, 0, 1.1, 0).name = 'laptop-lid';
@@ -49,9 +51,8 @@ export function createLaptop() {
   screen.name = 'laptop-screen';
   screen.position.set(0, 1.09, 0.052);
   lid.add(screen);
-  const webcam = new THREE.Mesh(new THREE.CircleGeometry(0.009, 12), new THREE.MeshBasicMaterial({ color: '#35465c' }));
-  webcam.position.set(0, 2.152, 0.0525);
-  lid.add(webcam);
+  const webcam = createWebcam(dark);
+  lid.add(webcam.group);
   const badgeMaterial = new THREE.MeshStandardMaterial({ color: '#c4cedd', metalness: 0.75, roughness: 0.35 });
   const badge = new THREE.Mesh(new THREE.RingGeometry(0.085, 0.1, 32), badgeMaterial);
   badge.rotation.y = Math.PI;
@@ -68,5 +69,5 @@ export function createLaptop() {
   logo.position.copy(badge.position);
   lid.add(logo);
 
-  return { group, screen, keyboard };
+  return { group, screen, keyboard, ports: body.ports, webcam };
 }

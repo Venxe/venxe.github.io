@@ -136,15 +136,21 @@ export function createScene(container) {
     camera.updateProjectionMatrix();
     steam.resize(height, pixelRatio, camera, maxPointSize);
   }
-  function screenAt(clientX, clientY) {
+  function pickAt(clientX, clientY) {
     const bounds = renderer.domElement.getBoundingClientRect();
     if (bounds.width <= 0 || bounds.height <= 0) return null;
     pointer.set(((clientX - bounds.left) / bounds.width) * 2 - 1, -((clientY - bounds.top) / bounds.height) * 2 + 1);
     camera.updateMatrixWorld();
+    laptop.group.updateMatrixWorld(true);
     raycaster.setFromCamera(pointer, camera);
     hits.length = 0;
     raycaster.intersectObjects(selectableObjects, true, hits);
-    return hits[0]?.object === laptop.screen ? hits[0].uv : null;
+    const first = hits.find((hit) => hit.object !== laptop.webcam.hitArea);
+    if (first?.object === laptop.screen) return { kind: 'screen', uv: first.uv };
+    const coverHit = hits.find((hit) => hit.object === laptop.webcam.hitArea);
+    // The hit area is only active on the front bezel; foreground objects still win.
+    if (coverHit && (!first || first.distance >= coverHit.distance - 1e-6)) return { kind: 'webcam' };
+    return null;
   }
   function dispose() {
     renderer.setAnimationLoop(null);
@@ -153,6 +159,7 @@ export function createScene(container) {
     const materials = new Set();
     const textures = new Set();
     scene.traverse((object) => {
+      if (object.isInstancedMesh) object.dispose();
       if (object.geometry) geometries.add(object.geometry);
       if (object.material) {
         for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
@@ -175,5 +182,5 @@ export function createScene(container) {
   camera.position.copy(homePose().position);
   controls.update();
   renderer.shadowMap.needsUpdate = true;
-  return { renderer, scene, camera, controls, steam, keyboard: laptop.keyboard, homePose, focusPose, resize, screenAt, dispose };
+  return { renderer, scene, camera, controls, steam, keyboard: laptop.keyboard, webcam: laptop.webcam, homePose, focusPose, resize, pickAt, dispose };
 }

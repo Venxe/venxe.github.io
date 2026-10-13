@@ -119,6 +119,89 @@ for (const group of [laptop.group, coffee.group]) {
   assert.ok(bottom >= 0 && bottom < 0.005, 'Models must sit just above the floor without intersecting it');
 }
 
+assert.deepEqual(laptop.ports.map(({ id, type }) => [id, type]), [
+  ['power-left', 'power'], ['usb-c-left', 'usb-c'], ['usb-a-left', 'usb-a'],
+  ['ethernet-right', 'ethernet'], ['usb-a-right', 'usb-a'],
+], 'The agreed five empty ports must be exposed to future accessories');
+const shell = ['laptop-deck', 'laptop-bottom', 'body-seam', 'body-left-wall', 'body-right-wall',
+  'body-front-wall', 'body-back-wall', 'body-corners'].map((name) => laptop.group.getObjectByName(name));
+const portRay = new THREE.Raycaster();
+portRay.far = 0.15;
+for (const { id, type, group, anchor } of laptop.ports) {
+  assert.equal(anchor.parent, group, 'Attachment anchors must move with their own port');
+  assert.equal(anchor.children.length, 0, 'Ports must start without attached accessories');
+  const outward = anchor.getWorldDirection(new THREE.Vector3());
+  assert.ok(outward.distanceTo(new THREE.Vector3(id.endsWith('left') ? -1 : 1, 0, 0)) < 1e-7, 'Anchor +Z must face outward');
+  const offset = type === 'power' ? [0.018, 0] : type === 'usb-c' ? [0.038, 0] : type === 'usb-a' ? [0.048, 0.014] : [0, 0.035];
+  const mouth = anchor.localToWorld(new THREE.Vector3(...offset, 0));
+  portRay.set(mouth.clone().addScaledVector(outward, 0.025), outward.clone().negate());
+  assert.equal(portRay.intersectObjects(shell, false).length, 0, `${id} must have a real opening through the chassis`);
+  assert.ok(portRay.intersectObject(group, true).length > 0, `${id} must have recessed socket geometry`);
+}
+const ethernetPort = laptop.ports.find(({ type }) => type === 'ethernet');
+const jaw = ethernetPort.group.getObjectByName('ethernet-jaw');
+assert.equal(jaw.rotation.x, 0, 'The empty Ethernet jaw must start closed');
+jaw.rotation.x = 0.5;
+scene.updateMatrixWorld(true);
+assert.ok(new THREE.Box3().setFromObject(jaw).min.y >= 0, 'An opened Ethernet jaw must clear the floor');
+const outward = ethernetPort.anchor.getWorldDirection(new THREE.Vector3());
+const lowerMouth = ethernetPort.anchor.localToWorld(new THREE.Vector3(0, -0.05, 0));
+portRay.set(lowerMouth.clone().addScaledVector(outward, 0.012), outward.clone().negate());
+portRay.far = 0.02;
+assert.equal(portRay.intersectObjects([...shell, jaw], true).length, 0, 'Opening the jaw must clear the full-height mouth, including the bottom plate');
+jaw.rotation.x = 0;
+scene.updateMatrixWorld(true);
+
+const grille = laptop.group.getObjectByName('cooling-grille');
+const grilleOrigin = laptop.group.localToWorld(new THREE.Vector3(0.006, 0, -1.035));
+grilleOrigin.y = new THREE.Box3().setFromObject(grille).max.y + 0.02;
+const grilleRay = new THREE.Raycaster(grilleOrigin, new THREE.Vector3(0, -1, 0), 0, 0.03);
+assert.equal(grilleRay.intersectObjects([shell[0], grille], false).length, 0, 'A cooling pore must pass through both the grille and the deck');
+grilleRay.ray.origin.x = laptop.group.position.x;
+assert.ok(grilleRay.intersectObject(grille).length > 0, 'Metal must remain between cooling pores');
+assert.equal(laptop.group.getObjectByName('rubber-feet').count, 4);
+assert.equal(laptop.group.getObjectByName('bottom-screws').count, 6);
+const frontHeight = new THREE.Box3().setFromObject(laptop.group.getObjectByName('body-front-wall')).getSize(new THREE.Vector3()).y;
+assert.ok(frontHeight < 0.085, 'The lower chassis must retain its slim side profile');
+const deckBottom = new THREE.Box3().setFromObject(shell[0]).min.y;
+const bodyBottom = new THREE.Box3().setFromObject(shell[1]).max.y;
+for (const port of laptop.ports.filter(({ type }) => type !== 'ethernet')) {
+  const bounds = new THREE.Box3().setFromObject(port.group);
+  assert.ok(bounds.min.y >= bodyBottom && bounds.max.y <= deckBottom, `${port.id} must fit between the thinner chassis plates`);
+}
+
+const { webcam } = laptop;
+const cover = webcam.group.getObjectByName('camera-cover');
+const lens = webcam.group.getObjectByName('camera-lens');
+const webcamVisuals = [];
+laptop.group.traverse((object) => { if (object.isMesh && object !== webcam.hitArea) webcamVisuals.push(object); });
+function visibleCamera() {
+  scene.updateMatrixWorld(true);
+  const center = lens.getWorldPosition(new THREE.Vector3());
+  const front = lens.getWorldDirection(new THREE.Vector3());
+  return new THREE.Raycaster(center.clone().addScaledVector(front, 1), front.negate()).intersectObjects(webcamVisuals, false)[0]?.object;
+}
+assert.equal(webcam.closed, false, 'The camera must start open');
+assert.equal(visibleCamera(), lens, 'The open cover must reveal the lens');
+assert.equal(webcam.update(1, false), false, 'An idle shutter must not update');
+assert.equal(webcam.group.getObjectByName('camera-indicator').material.emissive.getHex(), 0, 'The indicator must remain unlit');
+webcam.setClosed(true);
+assert.equal(webcam.update(0, false), false, 'Starting an animation must not refresh unchanged geometry');
+webcam.update(0.09, false);
+assert.ok(cover.position.x > -0.035 && cover.position.x < 0, 'The cover must slide gradually');
+const halfway = cover.position.x;
+webcam.setClosed(false);
+assert.equal(cover.position.x, halfway, 'Reversing must not jump the cover');
+webcam.update(0.18, false);
+assert.equal(visibleCamera(), lens, 'Reversal must reopen the camera');
+webcam.setClosed(true);
+webcam.update(0, true);
+assert.equal(cover.position.x, 0, 'Reduced motion must finish the cover immediately');
+assert.equal(visibleCamera()?.name, 'camera-cover-panel', 'The closed cover must physically block the lens');
+assert.equal(webcam.update(0.05, false), false, 'A settled shutter must stay idle');
+webcam.setClosed(false);
+webcam.update(0.18, false);
+
 const blocker = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 0.5), new THREE.MeshBasicMaterial());
 blocker.position.copy(target).addScaledVector(normal, 1);
 scene.add(blocker);
@@ -221,4 +304,5 @@ console.log('PASS: front screen hit, back-of-lid rejection, and foreground occlu
 console.log('PASS: desktop shell, display texture, screen UV mapping, and grounded models.');
 console.log('PASS: staggered keyboard legends, wide modifier/space keys, F1-F12, and non-overlapping keycaps.');
 console.log('PASS: synchronized keycaps/legends, physical key mapping, holds, short taps, simultaneous keys, reduced motion, reset, and idle upload budget.');
+console.log('PASS: real port/grille openings, five empty attachment anchors, recessed sockets, Ethernet jaw/floor clearance, feet and screws, and camera cover occlusion/reversal/reduced motion.');
 console.log('NOT CHECKED: WebGL shaders, canvas pixels, browser interaction, accessibility rendering, or FPS.');

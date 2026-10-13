@@ -5,10 +5,11 @@ import { SETTINGS } from './config.js';
 export function start(showError) {
   const container = document.querySelector('#scene');
   const app = createScene(container);
-  const { renderer, scene, camera, controls, steam, keyboard } = app;
+  const { renderer, scene, camera, controls, steam, keyboard, webcam } = app;
   const canvas = renderer.domElement;
   const hint = document.querySelector('#hint');
   const announcement = document.querySelector('#announcement');
+  const cameraCoverButton = document.querySelector('#camera-cover-toggle');
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const events = new AbortController();
   const listenerOptions = { signal: events.signal };
@@ -103,9 +104,18 @@ export function start(showError) {
     moveTo(returnPose());
     announce('Returned to the previous scene view.');
   }
-  function canOpenScreenAt(x, y) {
-    return !focused && app.screenAt(x, y) !== null;
+  function actionAt(x, y) {
+    const hit = app.pickAt(x, y);
+    return hit?.kind === 'webcam' ? 'webcam' : !focused && hit?.kind === 'screen' ? 'screen' : null;
   }
+  function toggleCameraCover() {
+    if (transition || contextLost || disposed || document.hidden) return;
+    webcam.setClosed(!webcam.closed);
+    cameraCoverButton.setAttribute('aria-pressed', String(webcam.closed));
+    if (webcam.update(0, reducedMotion.matches)) renderer.shadowMap.needsUpdate = true;
+    announce(webcam.closed ? 'Camera privacy cover closed.' : 'Camera privacy cover open.');
+  }
+  cameraCoverButton.addEventListener('click', toggleCameraCover, listenerOptions);
   function resetKeyboard() {
     if (keyboard.reset()) renderer.shadowMap.needsUpdate = true;
   }
@@ -150,7 +160,7 @@ export function start(showError) {
     if (transition || contextLost || event.button !== 0) return;
     pointers.set(event.pointerId, {
       x: event.clientX, y: event.clientY, moved: false,
-      screen: canOpenScreenAt(event.clientX, event.clientY),
+      action: actionAt(event.clientX, event.clientY),
     });
     if (pointers.size > 1) for (const pointer of pointers.values()) pointer.moved = true;
   }, listenerOptions);
@@ -158,7 +168,7 @@ export function start(showError) {
     const pointer = pointers.get(event.pointerId);
     if (pointer && Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y) > SETTINGS.dragThreshold) pointer.moved = true;
     if (!transition && !contextLost && event.pointerType === 'mouse' && pointers.size === 0) {
-      canvas.style.cursor = canOpenScreenAt(event.clientX, event.clientY) ? 'pointer' : focused ? 'default' : 'grab';
+      canvas.style.cursor = actionAt(event.clientX, event.clientY) ? 'pointer' : focused ? 'default' : 'grab';
     }
   }, listenerOptions);
   canvas.addEventListener('pointerup', (event) => {
@@ -166,9 +176,10 @@ export function start(showError) {
     pointers.delete(event.pointerId);
     if (!pointer || pointer.moved || transition || contextLost) return;
     if (Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y) > SETTINGS.dragThreshold) return;
-    if (!pointer.screen || !canOpenScreenAt(event.clientX, event.clientY)) return;
+    if (!pointer.action || pointer.action !== actionAt(event.clientX, event.clientY)) return;
     canvas.focus({ preventScroll: true });
-    openLaptop();
+    if (pointer.action === 'webcam') toggleCameraCover();
+    else openLaptop();
   }, listenerOptions);
   for (const event of ['pointercancel', 'lostpointercapture']) {
     canvas.addEventListener(event, (pointerEvent) => pointers.delete(pointerEvent.pointerId), listenerOptions);
@@ -201,6 +212,7 @@ export function start(showError) {
       else rememberCamera();
     }
     if (keyboard.update(delta, reducedMotion.matches)) renderer.shadowMap.needsUpdate = true;
+    if (webcam.update(delta, reducedMotion.matches)) renderer.shadowMap.needsUpdate = true;
     if (!reducedMotion.matches) steam.update(elapsed);
     scene.fog.near = controls.getDistance() + 6;
     scene.fog.far = scene.fog.near + 20;
@@ -230,6 +242,7 @@ export function start(showError) {
     controls.enableDamping = !reducedMotion.matches;
     steam.points.visible = !reducedMotion.matches;
     if (reducedMotion.matches) finishTransition();
+    if (webcam.update(0, reducedMotion.matches)) renderer.shadowMap.needsUpdate = true;
   }, listenerOptions);
   updateControls();
   steam.points.visible = !reducedMotion.matches;
@@ -242,6 +255,7 @@ export function start(showError) {
   canvas.addEventListener('webglcontextlost', (event) => {
     event.preventDefault();
     contextLost = true;
+    cameraCoverButton.disabled = true;
     resetKeyboard();
     renderer.setAnimationLoop(null);
     showError('Graphics rendering was interrupted. Reload the scene to continue.');

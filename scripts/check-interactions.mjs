@@ -55,6 +55,12 @@ function setup(width, height, reduceMotion = true) {
   });
   Object.defineProperties(canvas, { clientWidth: { get: () => width }, clientHeight: { get: () => height } });
   const elements = new Map(['scene', 'hint', 'announcement', 'loading'].map((id) => [id, { setAttribute() {}, textContent: '', hidden: false }]));
+  const attributes = new Map([['aria-pressed', 'false']]);
+  const coverButton = Object.assign(new EventTarget(), {
+    setAttribute(name, value) { attributes.set(name, value); },
+    getAttribute(name) { return attributes.get(name); },
+  });
+  elements.set('camera-cover-toggle', coverButton);
   Object.assign(elements.get('scene'), { append() {}, getBoundingClientRect: canvas.getBoundingClientRect });
   document.querySelector = (selector) => elements.get(selector.slice(1)) || null;
   globalThis.document = document;
@@ -392,4 +398,86 @@ assert.equal(keyboardTextureDisposals, 1, 'The shared legend texture must be dis
 
 console.log('PASS: studio framing, floor/light budget, blank desktop, screen picking, wheel/pinch and keyboard input, saved camera poses, gestures, resize, transitions, and context loss.');
 console.log('PASS: document keyboard input, language-independent physical codes, taps, holds, chords, shadow updates, blur/visibility/page cache cleanup, reduced motion, context loss, and keyboard disposal.');
+
+const cameraCover = setup(1440, 900, false);
+const shutter = cameraCover.renderer.scene.getObjectByName('camera-cover');
+const cameraHit = cameraCover.renderer.scene.getObjectByName('camera-cover-hit-area');
+const coverButton = cameraCover.elements.get('camera-cover-toggle');
+function coverPoint() {
+  cameraCover.renderer.scene.updateMatrixWorld(true);
+  cameraCover.camera.updateMatrixWorld();
+  const point = cameraHit.getWorldPosition(new THREE.Vector3()).project(cameraCover.camera);
+  return [(point.x + 1) * 1440 / 2, (1 - point.y) * 900 / 2];
+}
+function coverClick(pointerType = 'mouse') {
+  const [x, y] = coverPoint();
+  cameraCover.pointer('pointerdown', x, y, 1, pointerType);
+  cameraCover.pointer('pointerup', x, y, 1, pointerType);
+}
+coverClick();
+assert.equal(coverButton.getAttribute('aria-pressed'), 'true', 'Clicking the physical cover must toggle its accessible state');
+assert.equal(cameraCover.focused, false, 'Clicking the cover must not focus the desktop');
+cameraCover.tick(2);
+assert.ok(shutter.position.x > -0.035 && shutter.position.x < 0, 'The physical click must animate');
+coverClick('touch');
+assert.equal(coverButton.getAttribute('aria-pressed'), 'false', 'A touch must reverse the cover');
+cameraCover.tick(4);
+assert.equal(shutter.position.x, -0.035);
+
+for (const cancelEvent of ['pointercancel', 'lostpointercapture']) {
+  const [x, y] = coverPoint();
+  cameraCover.pointer('pointerdown', x, y);
+  cameraCover.pointer(cancelEvent, x, y);
+  cameraCover.pointer('pointerup', x, y);
+  assert.equal(coverButton.getAttribute('aria-pressed'), 'false', 'Cancelled input must not toggle the cover');
+}
+let [coverX, coverY] = coverPoint();
+cameraCover.pointer('pointerdown', coverX, coverY);
+cameraCover.pointer('pointermove', coverX + 20, coverY);
+cameraCover.pointer('pointerup', coverX, coverY);
+assert.equal(coverButton.getAttribute('aria-pressed'), 'false', 'Dragging must not toggle the cover');
+cameraCover.tick(20);
+[coverX, coverY] = coverPoint();
+cameraCover.pointer('pointerdown', coverX, coverY, 1, 'touch');
+cameraCover.pointer('pointerdown', coverX + 10, coverY, 2, 'touch');
+cameraCover.pointer('pointerup', coverX + 10, coverY, 2, 'touch');
+cameraCover.pointer('pointerup', coverX, coverY, 1, 'touch');
+assert.equal(coverButton.getAttribute('aria-pressed'), 'false', 'Multiple pointers must not toggle the cover');
+cameraCover.tick(20);
+
+cameraCover.key('Enter');
+cameraCover.tick(20);
+coverClick();
+assert.equal(cameraCover.focused, true, 'Cover input must also work without leaving screen focus');
+assert.equal(coverButton.getAttribute('aria-pressed'), 'true');
+cameraCover.tick(1);
+cameraCover.preference.matches = true;
+send(cameraCover.preference, 'change');
+assert.equal(shutter.position.x, 0, 'Enabling reduced motion must finish the moving shutter immediately');
+send(coverButton, 'click');
+assert.equal(shutter.position.x, -0.035, 'The native keyboard-accessible button must use the same cover behavior');
+assert.equal(cameraCover.elements.get('announcement').textContent, 'Camera privacy cover open.');
+
+const blocker = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.03), new THREE.MeshBasicMaterial());
+blocker.position.copy(cameraHit.position);
+blocker.position.z += 0.3;
+cameraHit.parent.add(blocker);
+cameraCover.tick();
+coverClick();
+assert.equal(coverButton.getAttribute('aria-pressed'), 'false', 'A foreground attachment must occlude the cover hit area');
+blocker.removeFromParent();
+blocker.geometry.dispose();
+blocker.material.dispose();
+
+let instancedDisposals = 0;
+cameraCover.renderer.scene.getObjectByName('rubber-feet').addEventListener('dispose', () => instancedDisposals++);
+send(cameraCover.canvas, 'webglcontextlost');
+assert.equal(coverButton.disabled, true, 'Context loss must disable the cover button');
+send(coverButton, 'click');
+assert.equal(coverButton.getAttribute('aria-pressed'), 'false');
+cameraCover.close();
+send(coverButton, 'click');
+assert.equal(coverButton.getAttribute('aria-pressed'), 'false', 'Disposal must remove the button listener');
+assert.equal(instancedDisposals, 1, 'Instanced detail buffers must be released exactly once');
+console.log('PASS: camera cover click/touch/button, reversal, focus, cancelled/drag/multi-pointer input, reduced motion, foreground occlusion, context loss, and instance disposal.');
 console.log('NOT CHECKED: browser event ordering, GPU shaders/pixels, screen-reader output, or FPS.');
