@@ -42,7 +42,6 @@ export function createScreen() {
   texture.colorSpace = THREE.SRGBColorSpace;
   const imageEvents = new AbortController();
   const icons = new Map();
-  const failedIcons = new Set();
   let dirty = true;
   let disposed = false;
   let now = Date.now();
@@ -77,8 +76,7 @@ export function createScreen() {
 
   for (const name of ICON_NAMES) {
     const image = new Image();
-    image.addEventListener('load', () => { failedIcons.delete(name); dirty = true; }, { signal: imageEvents.signal });
-    image.addEventListener('error', () => { failedIcons.add(name); dirty = true; }, { signal: imageEvents.signal });
+    for (const type of ['load', 'error']) image.addEventListener(type, () => { dirty = true; }, { signal: imageEvents.signal });
     image.src = new URL(`../assets/icons/${name}.svg`, import.meta.url).href;
     icons.set(name, image);
   }
@@ -131,6 +129,7 @@ export function createScreen() {
   }
   function volumeIcon() { return `audio-volume-${volume === 0 ? 'muted' : volume <= 33 ? 'low' : volume <= 66 ? 'medium' : 'high'}`; }
   function wifiIcon() { return wifi ? 'network-wireless-signal-excellent' : 'network-wireless-disabled'; }
+  function iconFailed(name) { const image = icons.get(name); return image.complete && image.naturalWidth === 0; }
   function rounded(box, color, radius = 10) {
     context.fillStyle = color;
     context.beginPath();
@@ -158,7 +157,7 @@ export function createScreen() {
     }
     if (entry.id === 'settings') {
       const names = [wifiIcon(), volumeIcon(), 'battery-level-80'];
-      if (names.some((name) => failedIcons.has(name))) {
+      if (names.some(iconFailed)) {
         context.font = '600 14px "Segoe UI", Arial, sans-serif';
         context.fillStyle = '#e8edf7';
         context.textAlign = 'center';
@@ -174,7 +173,7 @@ export function createScreen() {
       context.fill();
     } else {
       if (entry.icon) icon(entry.icon, box.x + (entry.iconOnly ? (box.w - 16) / 2 : 12), box.y + (box.h - 16) / 2, entry.disabled ? 0.35 : 1);
-      if (entry.iconOnly && failedIcons.has(entry.icon)) {
+      if (entry.iconOnly && iconFailed(entry.icon)) {
         context.font = '12px "Segoe UI", Arial, sans-serif';
         context.fillStyle = '#e8edf7';
         context.textAlign = 'center';
@@ -304,8 +303,7 @@ export function createScreen() {
       }
     } else if (id === 'power') { powerSaver = !powerSaver; announce(powerSaver ? 'Power Saver enabled.' : 'Balanced power mode.'); }
     dirty = true;
-    layout();
-    syncControls();
+    refreshControls();
   }
   function handleInput(event, uv) {
     if (disposed) return false;
@@ -355,9 +353,9 @@ export function createScreen() {
   function slide(point) {
     const range = items.find((entry) => entry.id === 'volume');
     setVolume((point.x - range.x - 8) / (range.w - 16) * 100);
-    layout();
-    syncControls();
+    refreshControls();
   }
+  function refreshControls() { layout(); syncControls(); }
   function syncControls() {
     if (!root) return;
     root.querySelector('[data-panel="calendar"]').hidden = panel !== 'calendar';
@@ -405,7 +403,7 @@ export function createScreen() {
       const options = { signal };
       element.addEventListener(element.type === 'range' ? 'input' : 'click', () => {
         if (disposed || !root || root.hidden || document.hidden) return;
-        if (id === 'volume') { setVolume(element.value); layout(); syncControls(); }
+        if (id === 'volume') { setVolume(element.value); refreshControls(); }
         else {
           activate(id);
           if ((id === 'clock' || id === 'settings') && panel) controls.get(panel === 'calendar' ? 'previous' : 'volume').focus({ preventScroll: true });
@@ -418,8 +416,7 @@ export function createScreen() {
         if (!offset || disposed || root.hidden || document.hidden) return;
         event.preventDefault();
         selectDate(new Date(selected.getFullYear(), selected.getMonth(), selected.getDate() + offset));
-        layout();
-        syncControls();
+        refreshControls();
         const next = items.find((entry) => entry.date && entry.selected);
         controls.get(next.id).focus({ preventScroll: true });
       }, options);
