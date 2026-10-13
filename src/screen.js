@@ -59,12 +59,7 @@ export function createScreen() {
   let pendingNetwork = null;
   let connectedAt = 0;
   let powerSaver = false;
-  let panelScale = 1;
-  let width = canvas.width;
-  let height = canvas.height;
   const barHeight = 36;
-  let scroll = 0;
-  let maxScroll = 0;
   let panelBox = null;
   let items = [];
   let gesture = null;
@@ -85,18 +80,14 @@ export function createScreen() {
   }
   function layout() {
     items = [];
-    // The bar stays in desktop pixels; only popovers adapt to the projected display.
+    // The bar, panels and hit regions share fixed desktop coordinates.
     item('clock', clock, (canvas.width - 140) / 2, 0, 140, barHeight, { inPanel: false });
     item('settings', 'Quick settings', canvas.width - 84, 0, 76, barHeight, { inPanel: false });
     panelBox = null;
-    maxScroll = 0;
     if (!panel) return;
-    const w = Math.min(360, width - 16);
-    const contentHeight = panel === 'calendar' ? 384 : expanded && wifi ? 324 : 236;
-    const barBottom = barHeight / panelScale;
-    panelBox = { x: panel === 'calendar' ? (width - w) / 2 : width - w - 8, y: barBottom + 8, w, h: Math.max(1, Math.min(contentHeight, height - barBottom - 16)) };
-    maxScroll = Math.max(0, contentHeight - panelBox.h);
-    scroll = Math.min(scroll, maxScroll);
+    const w = 360;
+    panelBox = { x: panel === 'calendar' ? (canvas.width - w) / 2 : canvas.width - w - 8, y: barHeight + 8, w,
+      h: panel === 'calendar' ? 384 : expanded && wifi ? 324 : 236 };
     const x = panelBox.x + 12;
     const y = panelBox.y;
     const inner = w - 24;
@@ -145,7 +136,7 @@ export function createScreen() {
     context.restore();
   }
   function drawItem(entry) {
-    const box = { ...entry, y: entry.y - (entry.inPanel ? scroll : 0) };
+    const box = entry;
     const activeTrigger = panel === 'calendar' ? 'clock' : panel === 'system' ? 'settings' : null;
     if (entry.type === 'button' && (entry.inPanel || entry.id === activeTrigger || hover === entry.id)) rounded(box, entry.selected ? '#3b5f89' : hover === entry.id ? '#ffffff20' : '#ffffff0b');
     if (entry.today || focused === entry.id) {
@@ -202,7 +193,6 @@ export function createScreen() {
     context.fillText('venxe', 16, barHeight / 2);
     items.filter((entry) => !entry.inPanel).forEach(drawItem);
     if (panelBox) {
-      context.setTransform(panelScale, 0, 0, panelScale, 0, 0);
       context.save();
       context.shadowColor = '#00000070';
       context.shadowBlur = 18;
@@ -214,40 +204,27 @@ export function createScreen() {
       context.roundRect(panelBox.x, panelBox.y, panelBox.w, panelBox.h, 16);
       context.clip();
       items.filter((entry) => entry.inPanel).forEach(drawItem);
-      if (maxScroll) {
-        const thumb = Math.max(20, panelBox.h * panelBox.h / (panelBox.h + maxScroll));
-        rounded({ x: panelBox.x + panelBox.w - 5, y: panelBox.y + scroll / maxScroll * (panelBox.h - thumb), w: 3, h: thumb }, '#ffffff50', 1);
-      }
       context.restore();
     }
     syncControls();
     texture.needsUpdate = true;
     dirty = false;
   }
-  function pointAt(uv) { return uv ? { x: uv.x * canvas.width / panelScale, y: (1 - uv.y) * canvas.height / panelScale } : null; }
+  function pointAt(uv) { return uv ? { x: uv.x * canvas.width, y: (1 - uv.y) * canvas.height } : null; }
   function hitTest(uv) {
     const point = pointAt(uv);
-    const barPoint = uv ? { x: uv.x * canvas.width, y: (1 - uv.y) * canvas.height } : null;
     for (const entry of items) {
       if (entry.type === 'text' || entry.disabled) continue;
       if (entry.inPanel && !inside(point, panelBox)) continue;
-      if (inside(entry.inPanel ? point : barPoint, { ...entry, y: entry.y - (entry.inPanel ? scroll : 0) })) return entry.id;
+      if (inside(point, entry)) return entry.id;
     }
     return inside(point, panelBox) ? 'panel' : panel ? 'dismiss' : null;
-  }
-  function ensureVisible(id) {
-    const entry = items.find((entry) => entry.id === id);
-    if (!entry?.inPanel || !panelBox) return;
-    const relativeY = entry.y - panelBox.y;
-    const next = Math.max(0, Math.min(maxScroll, relativeY < scroll ? relativeY : relativeY + entry.h > scroll + panelBox.h ? relativeY + entry.h - panelBox.h : scroll));
-    if (next !== scroll) { scroll = next; dirty = true; }
   }
   function closePanel(restoreFocus = true) {
     if (!panel) return false;
     const trigger = panel === 'calendar' ? 'clock' : 'settings';
     panel = null;
     expanded = false;
-    scroll = 0;
     gesture = null;
     focused = null;
     dirty = true;
@@ -309,16 +286,10 @@ export function createScreen() {
     if (disposed) return false;
     const point = pointAt(uv);
     const target = hitTest(uv);
-    if (event.type === 'wheel') {
-      if (!inside(point, panelBox)) return false;
-      const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? panelBox.h : 1);
-      scroll = THREE.MathUtils.clamp(scroll + delta, 0, maxScroll);
-      dirty = true;
-      return true;
-    }
+    if (event.type === 'wheel') return !!inside(point, panelBox);
     if (event.type === 'pointerdown') {
       if (!target) return false;
-      gesture = { id: target, startY: point?.y, startX: point?.x, scroll, moved: false };
+      gesture = { id: target, startY: point?.y, startX: point?.x, moved: false };
       if (target === 'volume') slide(point);
       return true;
     }
@@ -330,10 +301,6 @@ export function createScreen() {
       }
       if (point && Math.hypot(point.x - gesture.startX, point.y - gesture.startY) > 6) gesture.moved = true;
       if (gesture.id === 'volume' && point) slide(point);
-      else if (gesture.moved && point && panelBox && !['clock', 'settings', 'dismiss'].includes(gesture.id)) {
-        scroll = THREE.MathUtils.clamp(gesture.scroll + gesture.startY - point.y, 0, maxScroll);
-        dirty = true;
-      }
       return true;
     }
     if (event.type === 'pointerup') {
@@ -409,7 +376,7 @@ export function createScreen() {
           if ((id === 'clock' || id === 'settings') && panel) controls.get(panel === 'calendar' ? 'previous' : 'volume').focus({ preventScroll: true });
         }
       }, options);
-      element.addEventListener('focus', () => { focused = id; ensureVisible(id); dirty = true; }, options);
+      element.addEventListener('focus', () => { focused = id; dirty = true; }, options);
       element.addEventListener('blur', () => { if (focused === id) { focused = null; dirty = true; } }, options);
       if (id.startsWith('day-')) element.addEventListener('keydown', (event) => {
         const offset = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[event.key];
@@ -423,19 +390,9 @@ export function createScreen() {
     }
     syncControls();
   }
-  function update(time = Date.now(), displaySize = null) {
+  function update(time = Date.now()) {
     if (disposed) return;
     now = time;
-    const nextWidth = displaySize ? Math.max(240, Math.round(displaySize.width)) : canvas.width;
-    const nextHeight = displaySize ? Math.max(72, Math.min(canvas.height * nextWidth / canvas.width, Math.round(displaySize.height))) : canvas.height;
-    if (nextWidth !== width || nextHeight !== height) {
-      width = nextWidth;
-      height = nextHeight;
-      panelScale = canvas.width / width;
-      if (panel) dirty = true;
-      layout();
-      ensureVisible(focused);
-    }
     if (Math.floor(now / 60000) !== minute) {
       minute = Math.floor(now / 60000);
       today = new Date(now);

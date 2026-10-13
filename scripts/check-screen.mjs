@@ -12,7 +12,7 @@ const start = new Date(2026, 9, 13, 13, 45).getTime();
 Date.now = () => start;
 const { createScreen } = await import('../src/screen.js');
 
-function setup(size = null) {
+function setup() {
   const desktop = createScreen();
   const root = createDesktopControls();
   root.hidden = false;
@@ -21,7 +21,7 @@ function setup(size = null) {
   desktop.bindControls(root, (message) => messages.push(message), events.signal);
   const surface = desktop.texture.image;
   let now = start;
-  const update = (time = now, displaySize = size) => { now = time; size = displaySize; desktop.update(time, displaySize); };
+  const update = (time = now) => { now = time; desktop.update(time); };
   update();
   const control = (id) => root.querySelector(`[data-control="${id}"]`);
   const uv = (x, y) => ({ x: x / surface.width, y: 1 - y / surface.height });
@@ -61,18 +61,9 @@ for (const image of test.surface.images) {
   assert.ok((await stat(asset)).isFile(), 'Every rendered icon must be a local asset');
   assert.match(await readFile(asset, 'utf8'), /viewBox="0 0 16 16"/);
 }
-for (const size of [{ width: 300, height: 180 }, { width: 592, height: 390 }, { width: 1200, height: 790 }, null]) {
-  const beforeResize = test.desktop.texture.version;
-  test.update(start, size);
-  assert.equal(test.desktop.texture.version, beforeResize, 'Zoom and viewport changes must not redraw a closed, fixed-size top bar');
-  test.update(start + 60000, size);
-  const clock = test.surface.labels.find((label) => label.text === '13 Oct. 13:46');
-  assert.deepEqual({ x: clock.x, y: clock.y }, { x: 600, y: 18 }, 'The top bar must retain its desktop coordinates');
-  assert.ok(test.surface.images.slice(0, 3).every((image) => image.w === 16 && image.h === 16), 'Status icons must stay at 16 desktop pixels');
-  assert.equal(test.desktop.hitTest(test.uv(600, 35)), 'clock');
-  assert.equal(test.desktop.hitTest(test.uv(600, 37)), null, 'Clock hit regions must not grow with the viewport');
-  test.update(start, size);
-}
+assert.ok(test.surface.images.slice(0, 3).every((image) => image.w === 16 && image.h === 16), 'Status icons must stay at 16 desktop pixels');
+assert.equal(test.desktop.hitTest(test.uv(600, 35)), 'clock');
+assert.equal(test.desktop.hitTest(test.uv(600, 37)), null, 'Clock hit regions must retain their fixed desktop height');
 const resizedIdle = test.desktop.texture.version;
 test.update(start + 15000);
 assert.equal(test.desktop.texture.version, resizedIdle);
@@ -170,28 +161,6 @@ test.desktop.handleInput({ type: 'pointerup' }, null);
 test.update();
 assert.equal(test.control('settings').getAttribute('aria-expanded'), 'false');
 
-for (const size of [{ width: 300, height: 180 }, { width: 390, height: 257 }, { width: 592, height: 390 }]) {
-  const compact = setup(size);
-  compact.click('settings');
-  const panel = compact.surface.boxes.find((box) => box.w > 200 * 1200 / size.width);
-  assert.ok(panel.x >= 0 && panel.y >= 0 && panel.x + panel.w <= 1200.01 && panel.y + panel.h <= 790.01, 'Panels must stay within the desktop');
-  assert.equal(compact.desktop.hitTest(compact.uv(600, 35)), 'clock', 'Clock hit regions must retain their fixed desktop height');
-  compact.control('power').focus();
-  compact.update();
-  compact.click('power');
-  assert.equal(compact.control('power').textContent, 'Power Saver', 'Keyboard focus must scroll the focused control into view');
-  compact.desktop.handleInput({ type: 'wheel', deltaY: -10000, deltaMode: 0 }, compact.uv(panel.x + 3, panel.y + 3));
-  compact.update();
-  compact.click('mute');
-  assert.equal(compact.control('volume').value, '0');
-  compact.click('clock');
-  compact.control('today').focus();
-  compact.update();
-  compact.click('today');
-  assert.match(compact.control('date-heading').textContent, /13 October 2026/);
-  compact.dispose();
-}
-
 test.update(start);
 test.click('clock');
 const beforeCancel = test.control('month').textContent;
@@ -230,5 +199,5 @@ test.dispose();
 test.desktop.update(start + 60000);
 test.control('clock').click();
 assert.equal(test.desktop.texture.version, beforeDispose);
-console.log('PASS: centered live local clock, icon order/assets/loading/failure/recovery, idle uploads, calendar dates/months/leap year, keyboard focus, volume/mute/clamping, Wi-Fi selection/cancellation, power mode, compact panel scrolling, hidden controls, and disposal.');
+console.log('PASS: centered live local clock, icon order/assets/loading/failure/recovery, idle uploads, calendar dates/months/leap year, keyboard focus, volume/mute/clamping, Wi-Fi selection/cancellation, power mode, hidden controls, and disposal.');
 console.log('NOT CHECKED: GPU pixels, native browser input behavior, screen-reader output, or FPS.');

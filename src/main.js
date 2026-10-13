@@ -390,7 +390,7 @@ export function start(showError) {
     scene.fog.near = controls.getDistance() + 6;
     scene.fog.far = scene.fog.near + 20;
     updateDesktopControls();
-    if (!lid.closed && !lid.moving) desktop.update(Date.now(), viewMode !== 'free' && !transition ? app.screenSize() : null);
+    if (!lid.closed && !lid.moving) desktop.update();
     app.render(viewMode === 'screen' && !transition);
   }
   const observer = new ResizeObserver(() => {
