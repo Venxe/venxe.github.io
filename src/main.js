@@ -5,7 +5,7 @@ import { SETTINGS } from './config.js';
 export function start(showError) {
   const container = document.querySelector('#scene');
   const app = createScene(container);
-  const { renderer, scene, camera, controls, steam } = app;
+  const { renderer, scene, camera, controls, steam, keyboard } = app;
   const canvas = renderer.domElement;
   const hint = document.querySelector('#hint');
   const announcement = document.querySelector('#announcement');
@@ -106,12 +106,19 @@ export function start(showError) {
   function canOpenScreenAt(x, y) {
     return !focused && app.screenAt(x, y) !== null;
   }
+  function resetKeyboard() {
+    if (keyboard.reset()) renderer.shadowMap.needsUpdate = true;
+  }
   document.addEventListener('keydown', (event) => {
+    if (contextLost || disposed || document.hidden) return;
+    if (!event.repeat) keyboard.setPressed(event.code, true);
     if (event.key === 'Escape' && focused) {
       event.preventDefault();
       leaveLaptop();
     }
   }, listenerOptions);
+  document.addEventListener('keyup', (event) => keyboard.setPressed(event.code, false), listenerOptions);
+  window.addEventListener('blur', resetKeyboard, listenerOptions);
   canvas.addEventListener('keydown', (event) => {
     if (transition || contextLost) return;
     if (event.key === 'Enter' || event.key === ' ') {
@@ -193,6 +200,7 @@ export function start(showError) {
       else if (focused && distance > lastDistance + 1e-6 && distance >= focusDistance * SETTINGS.focusExitRatio) leaveLaptop();
       else rememberCamera();
     }
+    if (keyboard.update(delta, reducedMotion.matches)) renderer.shadowMap.needsUpdate = true;
     if (!reducedMotion.matches) steam.update(elapsed);
     scene.fog.near = controls.getDistance() + 6;
     scene.fog.far = scene.fog.near + 20;
@@ -228,16 +236,19 @@ export function start(showError) {
   document.addEventListener('visibilitychange', () => {
     previousTime = null;
     pointers.clear();
+    if (document.hidden) resetKeyboard();
     renderer.setAnimationLoop(document.hidden || contextLost ? null : frame);
   }, listenerOptions);
   canvas.addEventListener('webglcontextlost', (event) => {
     event.preventDefault();
     contextLost = true;
+    resetKeyboard();
     renderer.setAnimationLoop(null);
     showError('Graphics rendering was interrupted. Reload the scene to continue.');
   }, listenerOptions);
   window.addEventListener('pagehide', (event) => {
     renderer.setAnimationLoop(null);
+    resetKeyboard();
     if (event.persisted) return;
     disposed = true;
     observer.disconnect();

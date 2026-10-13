@@ -175,5 +175,5 @@ export function createScene(container) {
   camera.position.copy(homePose().position);
   controls.update();
   renderer.shadowMap.needsUpdate = true;
-  return { renderer, scene, camera, controls, steam, homePose, focusPose, resize, screenAt, dispose };
+  return { renderer, scene, camera, controls, steam, keyboard: laptop.keyboard, homePose, focusPose, resize, screenAt, dispose };
 }
