@@ -35,7 +35,9 @@ export function createSystem() {
     const count = lines.filter((line) => elapsed >= line.at).length;
     const countdownSeconds = stage.id === 'limine' && !bootInterrupted ? Math.max(0, Math.ceil((duration() - (now - started)) / 1000)) : null;
     if (boot?.stage === stage.id && boot.selectedEntry === selectedEntry && boot.countdownSeconds === countdownSeconds && boot.lines.length === count) return;
-    boot = Object.freeze({ stage: stage.id, selectedEntry, countdownSeconds, lines: Object.freeze(lines.slice(0, count)) });
+    const visibleLines = lines.slice(0, count);
+    if (stage.id === 'kernel' && visibleLines.length) visibleLines[0] = Object.freeze({ ...visibleLines[0], text: `[    0.000000] Linux version ${entry.version} (x86_64)` });
+    boot = Object.freeze({ stage: stage.id, selectedEntry, countdownSeconds, lines: Object.freeze(visibleLines) });
   }
   function enter(next, at = now) {
     phase = next;

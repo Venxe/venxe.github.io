@@ -1,4 +1,4 @@
-import { BOOT_BRANDING, BOOT_COLORS, BOOT_ENTRIES, SESSION_LABEL } from './boot-profile.js';
+import { BOOT_COLORS, BOOT_MENU, SESSION_LABEL } from './boot-profile.js';
 
 function drawWallpaper(context, width, height) {
   const background = context.createLinearGradient(0, 0, width, height);
@@ -31,6 +31,20 @@ export function createScreenPainter(canvas, icons) {
   wallpaper.width = canvas.width;
   wallpaper.height = canvas.height;
   drawWallpaper(wallpaper.getContext('2d'), wallpaper.width, wallpaper.height);
+  const bootWallpaper = document.createElement('canvas');
+  bootWallpaper.width = canvas.width;
+  bootWallpaper.height = canvas.height;
+  const bootContext = bootWallpaper.getContext('2d');
+  bootContext.fillStyle = BOOT_COLORS.menuBackground;
+  bootContext.fillRect(0, 0, canvas.width, canvas.height);
+  for (const [x, y, radius, color] of [[300, 70, 290, '#62487899'], [535, 5, 250, '#70669499'],
+    [140, -30, 240, '#53485d88'], [260, 230, 180, '#513d6755']]) {
+    const glow = bootContext.createRadialGradient(x, y, 0, x, y, radius);
+    glow.addColorStop(0, color);
+    glow.addColorStop(1, '#10172800');
+    bootContext.fillStyle = glow;
+    bootContext.fillRect(0, 0, canvas.width, canvas.height);
+  }
 
   function iconFailed(name) { const image = icons.get(name); return image.complete && image.naturalWidth === 0; }
   function rounded(box, color, radius = 10) {
@@ -109,31 +123,37 @@ export function createScreenPainter(canvas, icons) {
     context.fillRect(0, 0, canvas.width, canvas.height);
     context.font = '16px Consolas, "Liberation Mono", monospace';
     if (boot.stage === 'limine') {
-      context.textAlign = 'center';
-      context.fillStyle = BOOT_COLORS.branding;
-      context.fillText(BOOT_BRANDING, canvas.width / 2, 30);
-      context.fillStyle = BOOT_COLORS.help;
-      context.fillText('ARROWS Select    ENTER Boot', canvas.width / 2, 70);
+      context.drawImage(bootWallpaper, 0, 0);
+      context.font = `${BOOT_MENU.fontSize}px Consolas, "Liberation Mono", monospace`;
       context.textAlign = 'left';
+      for (const [key, label, x] of [['ARROWS', 'Select', 112], ['ENTER', 'Boot', 294], ['E', 'Edit', 444], ['B', 'Blank Entry', 945]]) {
+        context.fillStyle = BOOT_COLORS.help;
+        context.fillText(key, x, 15);
+        context.fillStyle = BOOT_COLORS.menuText;
+        context.fillText(label, x + (key.length + 1) * BOOT_MENU.cellWidth, 15);
+      }
       for (const entry of items) {
+        const labelX = entry.x + entry.prefix.length * BOOT_MENU.cellWidth;
+        const y = entry.y + entry.h / 2;
+        context.fillStyle = BOOT_COLORS.menuText;
+        context.fillText(entry.prefix, entry.x, y);
         if (entry.selected) {
           context.fillStyle = BOOT_COLORS.selected;
-          context.fillRect(entry.x + 12, entry.y + 10, (entry.label.length + 2) * 9.6, 24);
+          context.fillRect(labelX - 3, entry.y + 1, entry.label.length * BOOT_MENU.cellWidth + 6, entry.h - 2);
         }
-        context.fillStyle = entry.selected ? BOOT_COLORS.background : BOOT_COLORS.text;
-        context.fillText(entry.label, entry.x + 22, entry.y + entry.h / 2);
-        if (entry.id === focused) {
-          context.strokeStyle = BOOT_COLORS.branding;
+        context.fillStyle = entry.selected ? BOOT_COLORS.menuBackground : BOOT_COLORS.menuText;
+        context.fillText(entry.label, labelX, y);
+        if (entry.id === focused && !entry.selected) {
+          context.strokeStyle = BOOT_COLORS.selected;
           context.lineWidth = 1;
-          context.strokeRect(entry.x + 3, entry.y + 3, entry.w - 6, entry.h - 6);
+          context.strokeRect(labelX - 3, entry.y + 1, entry.label.length * BOOT_MENU.cellWidth + 6, entry.h - 2);
         }
       }
-      context.textAlign = 'center';
-      context.fillStyle = BOOT_COLORS.branding;
-      context.fillText(BOOT_ENTRIES.find((entry) => entry.id === boot.selectedEntry).comment, canvas.width / 2, canvas.height - 60);
-      context.fillStyle = BOOT_COLORS.accent;
-      context.fillText(boot.countdownSeconds === null ? 'Automatic boot cancelled. Press ENTER to boot.'
-        : `Booting automatically in ${boot.countdownSeconds}...`, canvas.width / 2, canvas.height - 30);
+      if (boot.countdownSeconds !== null) {
+        context.textAlign = 'center';
+        context.fillStyle = BOOT_COLORS.help;
+        context.fillText(`Booting automatically in ${boot.countdownSeconds}...`, canvas.width / 2, canvas.height - 22);
+      }
       return;
     }
     context.textAlign = 'left';

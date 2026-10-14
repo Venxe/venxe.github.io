@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { DESKTOP_SIZE } from './config.js';
 import { createSystem } from './system.js';
 import { createScreenPainter } from './screen-painter.js';
-import { BOOT_ENTRIES, BOOT_STAGES, SESSION_LABEL } from './boot-profile.js';
+import { BOOT_ENTRIES, BOOT_STAGES, BOOT_MENU, SESSION_LABEL } from './boot-profile.js';
 
 const NETWORKS = ['Venxe Studio', 'Coffee Corner'];
 const ICON_NAMES = ['audio-volume-high', 'audio-volume-medium', 'audio-volume-low', 'audio-volume-muted',
@@ -53,6 +53,9 @@ export function createScreen(system = createSystem()) {
   let lastVerifying = false;
   let lastClosed = system.state.closed;
   let lastBoot = null;
+  let bootExpanded = true;
+  let snapshotsExpanded = false;
+  let bootCursor = 'boot-normal';
   let animationFrame = -1;
   let loginRevealed = false;
   let revealStarted = 0;
@@ -77,8 +80,15 @@ export function createScreen(system = createSystem()) {
     panelBox = null;
     const state = system.state;
     if (state.boot?.stage === 'limine') {
-      BOOT_ENTRIES.forEach((entry, index) => item(`boot-${entry.id}`, entry.label, 320, 293 + index * 44, 560, 44,
-        { inPanel: false, selected: state.boot.selectedEntry === entry.id }));
+      const { x, y, width, rowHeight } = BOOT_MENU;
+      const row = (id, label, prefix, extra = {}) => item(id, label, x, y + items.length * rowHeight, width, rowHeight,
+        { inPanel: false, selected: bootCursor === id, prefix, ...extra });
+      row('boot-cachyos', 'CachyOS', bootExpanded ? '[-] ' : '[+] ', { expanded: bootExpanded });
+      if (bootExpanded) {
+        BOOT_ENTRIES.forEach((entry) => row(`boot-${entry.id}`, entry.label, ' ├──► '));
+        row('boot-snapshots', 'Snapshots', snapshotsExpanded ? ' └[-] ' : ' └[+] ', { expanded: snapshotsExpanded });
+        if (snapshotsExpanded) row('boot-empty', 'No snapshots available', '      ', { type: 'text' });
+      }
       return;
     }
     if (!['desktop', 'login'].includes(state.phase)) return;
@@ -199,6 +209,17 @@ export function createScreen(system = createSystem()) {
   function activate(id) {
     if (disposed || (!items.some((entry) => entry.id === id && !entry.disabled) && id !== 'dismiss')) return;
     if (id.startsWith('boot-')) {
+      if (id === 'boot-cachyos' || id === 'boot-snapshots') {
+        system.send('boot-interrupt');
+        if (id === 'boot-cachyos') bootExpanded = !bootExpanded;
+        else snapshotsExpanded = !snapshotsExpanded;
+        bootCursor = id;
+        dirty = true;
+        update();
+        announce(id === 'boot-cachyos' ? `CachyOS ${bootExpanded ? 'expanded' : 'collapsed'}.`
+          : snapshotsExpanded ? 'No snapshots available.' : 'Snapshots collapsed.');
+        return;
+      }
       system.send('boot-select', id.slice(5));
       system.send('boot-confirm');
       update();
@@ -271,32 +292,45 @@ export function createScreen(system = createSystem()) {
       system.send('boot-interrupt');
       const boot = system.state.boot;
       if (boot?.stage !== 'limine') { update(); return true; }
-      const index = BOOT_ENTRIES.findIndex((entry) => entry.id === boot.selectedEntry);
-      const next = event.key === 'Home' ? 0 : event.key === 'End' ? BOOT_ENTRIES.length - 1
-        : event.key === 'ArrowUp' ? (index + BOOT_ENTRIES.length - 1) % BOOT_ENTRIES.length
-          : event.key === 'ArrowDown' ? (index + 1) % BOOT_ENTRIES.length : null;
+      const rows = items.filter((entry) => entry.type === 'button');
+      const target = event.target?.dataset?.control;
+      const cursor = rows.some((entry) => entry.id === target) ? target : bootCursor;
+      const index = Math.max(0, rows.findIndex((entry) => entry.id === cursor));
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? rows.length - 1
+        : event.key === 'ArrowUp' ? (index + rows.length - 1) % rows.length
+          : event.key === 'ArrowDown' ? (index + 1) % rows.length : null;
       if (next !== null && !event.altKey && !event.ctrlKey && !event.metaKey) {
-        system.send('boot-select', BOOT_ENTRIES[next].id);
+        selectBootItem(rows[next].id);
         update();
-        controls.get(`boot-${BOOT_ENTRIES[next].id}`)?.focus({ preventScroll: true });
+        controls.get(rows[next].id)?.focus({ preventScroll: true });
         return true;
       }
       if (['Enter', ' ', 'ArrowRight'].includes(event.key) && !event.altKey && !event.ctrlKey && !event.metaKey) {
         if (!event.repeat) {
-          const target = event.target?.dataset?.control;
-          if (target?.startsWith('boot-')) system.send('boot-select', target.slice(5));
-          system.send('boot-confirm');
+          activate(cursor);
         }
         update();
         return true;
       }
+      if (event.key === 'ArrowLeft' && !event.altKey && !event.ctrlKey && !event.metaKey) {
+        if (bootExpanded) activate('boot-cachyos');
+        focusControl('boot-cachyos');
+        return true;
+      }
       update();
+      if (['e', 'E', 'b', 'B'].includes(event.key)) announce('Entry editing is unavailable.');
       return !['Escape', 'Tab', '+', '=', '-'].includes(event.key) && !event.altKey && !event.ctrlKey && !event.metaKey;
     }
     if (panel || system.state.phase !== 'login' || loginRevealed) return false;
     if (event.target?.dataset?.control === 'power-menu') return false;
     if (!event.repeat) revealLogin();
     return true;
+  }
+  function selectBootItem(id) {
+    bootCursor = id;
+    system.send('boot-interrupt');
+    if (BOOT_ENTRIES.some((entry) => `boot-${entry.id}` === id)) system.send('boot-select', id.slice(5));
+    dirty = true;
   }
   function handleInput(event, uv) {
     if (disposed) return false;
@@ -305,14 +339,15 @@ export function createScreen(system = createSystem()) {
     if (system.state.boot?.stage === 'limine' && point) {
       if (['pointerdown', 'pointermove', 'wheel'].includes(event.type)) system.send('boot-interrupt');
       if (event.type === 'pointermove' && !gesture && target?.startsWith('boot-')) {
-        system.send('boot-select', target.slice(5));
+        if (target !== bootCursor) selectBootItem(target);
         update();
       }
       if (event.type === 'wheel' && target?.startsWith('boot-')) {
         if (event.deltaY) {
-          const index = BOOT_ENTRIES.findIndex((entry) => entry.id === system.state.boot?.selectedEntry);
-          const next = Math.max(0, Math.min(BOOT_ENTRIES.length - 1, index + Math.sign(event.deltaY)));
-          system.send('boot-select', BOOT_ENTRIES[next].id);
+          const rows = items.filter((entry) => entry.type === 'button');
+          const index = Math.max(0, rows.findIndex((entry) => entry.id === bootCursor));
+          const next = Math.max(0, Math.min(rows.length - 1, index + Math.sign(event.deltaY)));
+          selectBootItem(rows[next].id);
         }
         update();
         return true;
@@ -383,7 +418,10 @@ export function createScreen(system = createSystem()) {
         root.querySelector('[data-login-error]').textContent = system.state.error;
       }
       if (id === 'power-menu') element.setAttribute('aria-expanded', String(panel === 'power'));
-      if (id.startsWith('boot-')) element.setAttribute('aria-pressed', String(entry.selected));
+      if (id.startsWith('boot-')) {
+        if (entry.expanded !== undefined) element.setAttribute('aria-expanded', String(entry.expanded));
+        else element.setAttribute('aria-pressed', String(entry.selected));
+      }
       if (entry.date) {
         element.setAttribute('aria-label', fullDate(entry.date));
         element.setAttribute('aria-pressed', String(entry.selected));
@@ -477,6 +515,7 @@ export function createScreen(system = createSystem()) {
     }
     if (lastPhase !== state.phase || lastError !== state.error || lastVerifying !== state.verifying) {
       if (lastPhase !== state.phase) {
+        if (state.phase === 'booting') { bootExpanded = true; snapshotsExpanded = false; bootCursor = 'boot-normal'; }
         closePanel(false);
         gesture = null;
         hover = null;

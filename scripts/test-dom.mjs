@@ -23,7 +23,7 @@ export class TestElement extends EventTarget {
     let scale = 1;
     this.context = new Proxy({}, { get: (target, key) => {
       if (key in target) return target[key];
-      if (key === 'createLinearGradient') return () => ({ addColorStop() {} });
+      if (key === 'createLinearGradient' || key === 'createRadialGradient') return () => ({ addColorStop() {} });
       if (key === 'setTransform') return (value) => { scale = value; };
       if (key === 'fillText') return (text, x, y) => this.labels.push({ text, x: x * scale, y: y * scale });
       if (key === 'drawImage') return (image, x, y, w, h) => {

@@ -4,17 +4,17 @@
 const line = (at, text, status = '') => Object.freeze({ at, text, status });
 const rootUuid = '895a2100-674e-4b20-94e1-5f31d7ea8801';
 const cmdline = `root=UUID=${rootUuid} rootfstype=btrfs rootflags=subvol=@ rw loglevel=6 systemd.show_status=yes`;
-const kernelPath = 'boot():/vmlinuz-linux-cachyos';
-export const BOOT_BRANDING = 'Limine 12.9.3 (x86-64, UEFI)';
 export const SESSION_LABEL = 'CachyOS · Hyprland';
 export const BOOT_COLORS = Object.freeze({ background: '#000000', text: '#aaaaaa',
-  branding: '#00aaaa', help: '#00aa00', accent: '#55ff55', selected: '#aaaaaa' });
+  menuBackground: '#101728', menuText: '#c3c6dc', help: '#a1c99c', accent: '#55ff55', selected: '#c6cce2' });
+export const BOOT_MENU = Object.freeze({ x: 440, y: 298, rowHeight: 20, width: 300, fontSize: 18, cellWidth: 10.8 });
 export const BOOT_ENTRIES = Object.freeze([
-  ['normal', 'CachyOS (linux-cachyos)', 'initramfs-linux-cachyos.img', 'Boot CachyOS with the default initramfs.'],
-  ['fallback', 'CachyOS (linux-cachyos, fallback)', 'initramfs-linux-cachyos-fallback.img', 'Boot CachyOS with the fallback initramfs (additional drivers).'],
-].map(([id, label, image, comment]) => {
-  const modulePath = `boot():/${image}`;
-  return Object.freeze({ id, label, comment, kernelPath, modulePath,
+  ['normal', 'linux-cachyos', '7.2.9-2-cachyos', 'Boot CachyOS with the default kernel.'],
+  ['lts', 'linux-cachyos-lts', '6.12.0-cachyos-lts', 'Boot CachyOS with the long-term support kernel.'],
+].map(([id, label, version, comment]) => {
+  const kernelPath = `boot():/vmlinuz-${label}`;
+  const modulePath = `boot():/initramfs-${label}.img`;
+  return Object.freeze({ id, label, version, comment, kernelPath, modulePath,
     loadingLines: Object.freeze([
       line(0, `linux: Loading kernel \`${kernelPath}\`...`),
       line(280, `linux: Loading module \`${modulePath}\`...`),
@@ -25,7 +25,7 @@ export const BOOT_STAGES = Object.freeze([
   { id: 'limine', duration: 3000, announcement: 'Limine boot menu. Use arrows to select and Enter to boot.' },
   { id: 'loader', duration: 700, announcement: 'Loading the Linux kernel and initramfs.' },
   { id: 'kernel', duration: 1250, announcement: 'Linux is initializing hardware.', lines: [
-    line(0, '[    0.000000] Linux version 7.2.9-2-cachyos (x86_64)'),
+    line(0, '[    0.000000] Linux version'),
     line(0, `[    0.000000] Command line: ${cmdline}`),
     line(150, '[    0.042186] efi: EFI runtime services initialized'),
     line(300, '[    0.083024] ACPI: Interpreter enabled'),
