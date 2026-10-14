@@ -162,7 +162,7 @@ export async function runDesktopInteractions() {
   powerFlow.tick(6);
   assert.ok(powerFlow.screen.material.map.image.labels.some(({ text }) => text.includes('initramfs-linux-cachyos-lts.img')));
   assert.equal(powerControl('boot-normal').hidden, true);
-  powerFlow.tick(85);
+  powerFlow.tick(115);
   assert.equal(powerControl('unlock').hidden, false);
   assert.equal(powerControl('password').hidden, true);
   const [unlockX, unlockY] = powerFlow.screenPoint(0.5, 0.5);
@@ -209,7 +209,7 @@ export async function runDesktopInteractions() {
   assert.equal(powerFlow.screen.material.color.r, 0, 'Releasing must not restart after a forced shutdown');
   const hardwarePowerButton = powerFlow.elements.get('laptop-power');
   send(hardwarePowerButton, 'click', { detail: 0 });
-  powerFlow.tick(160);
+  powerFlow.tick(186);
   assert.equal(powerControl('unlock').hidden, false, 'Assistive click must start a powered-off laptop at the clock screen');
   send(hardwarePowerButton, 'keydown', { key: 'Enter' });
   powerFlow.tick(40);
@@ -308,7 +308,7 @@ export async function runDesktopInteractions() {
   }
   console.log('PASS: desktop/mobile Limine wheel isolation, Escape scene return, stopped timers and single/multiple-touch boot gestures.');
 
-  for (const bootElapsed of [0, 6500]) {
+  for (const bootElapsed of [0, 8500]) {
     const hold = setup(1440, 900, false);
     hold.key('Enter');
     hold.tick(20);

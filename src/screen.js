@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { DESKTOP_SIZE } from './config.js';
 import { createSystem } from './system.js';
 import { createScreenPainter } from './screen-painter.js';
-import { BOOT_ENTRIES, BOOT_STAGES, BOOT_MENU, SESSION_LABEL } from './boot-profile.js';
+import { BOOT_ENTRIES, BOOT_STAGES, BOOT_MENU, BOOT_ANIMATION, SESSION_LABEL } from './boot-profile.js';
 
 const NETWORKS = ['Venxe Studio', 'Coffee Corner'];
 const ICON_NAMES = ['audio-volume-high', 'audio-volume-medium', 'audio-volume-low', 'audio-volume-muted',
@@ -22,6 +22,9 @@ export function createScreen(system = createSystem()) {
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   const imageEvents = new AbortController();
+  const bootLogo = [];
+  const bootThrobber = [];
+  let bootAnimationsRequested = false;
   let dirty = true;
   let disposed = false;
   let now = Date.now();
@@ -71,6 +74,33 @@ export function createScreen(system = createSystem()) {
     for (const type of ['load', 'error']) image.addEventListener(type, () => { dirty = true; }, { signal: imageEvents.signal });
     image.src = new URL(`../assets/icons/${name}.svg`, import.meta.url).href;
     icons.set(name, image);
+  }
+  function loadBootImage(name) {
+    const image = new Image();
+    for (const type of ['load', 'error']) image.addEventListener(type, () => {
+      if (system.state.phase === 'booting') dirty = true;
+    }, { signal: imageEvents.signal });
+    image.src = new URL(`../assets/boot/cachyos/${name}.png`, import.meta.url).href;
+    return image;
+  }
+  function bootArtwork(state) {
+    if (state.phase !== 'booting') return null;
+    const final = BOOT_ANIMATION.logoFrames - 1;
+    // Request the static fallback first; the initial desktop never loads boot artwork.
+    bootLogo[final] ||= loadBootImage(`animation-${final}`);
+    if (!state.reducedMotion && !bootAnimationsRequested) {
+      bootAnimationsRequested = true;
+      for (let i = 0; i < final; i++) bootLogo[i] = loadBootImage(`animation-${String(i).padStart(2, '0')}`);
+      for (let i = 0; i < BOOT_ANIMATION.throbberFrames; i++) bootThrobber[i] = loadBootImage(`throbber-${String(i).padStart(2, '0')}`);
+    }
+    if (!state.boot.stage.startsWith('plymouth-')) return null;
+    const loaded = (image) => image?.complete && image.naturalWidth > 0;
+    const throbber = state.boot.stage === 'plymouth-throbber' && !state.reducedMotion;
+    const frames = throbber ? bootThrobber : bootLogo;
+    if (!state.reducedMotion && frames.length && frames.every(loaded)) {
+      return { image: frames[state.boot.frameIndex], size: throbber ? BOOT_ANIMATION.throbberSize : BOOT_ANIMATION.logoSize };
+    }
+    return loaded(bootLogo[final]) ? { image: bootLogo[final], size: BOOT_ANIMATION.logoSize } : null;
   }
   function item(id, label, x, y, w, h = 44, extra = {}) {
     items.push({ id, label, x, y, w, h, type: 'button', inPanel: true, ...extra });
@@ -159,6 +189,7 @@ export function createScreen(system = createSystem()) {
       statusIcons: [wifiIcon(), volumeIcon(), 'battery-level-80'],
       connecting: pendingNetwork !== null,
       state: system.state,
+      bootArtwork: bootArtwork(system.state),
       dateLabel: fullDate(today),
       loginAnimation: loginMotion(),
       passwordLength: controls.get('password')?.value?.length || 0,
@@ -545,7 +576,7 @@ export function createScreen(system = createSystem()) {
       const previous = lastBoot;
       lastBoot = state.boot;
       dirty = true;
-      refreshControls();
+      if (state.boot?.stage !== previous?.stage || state.boot?.selectedEntry !== previous?.selectedEntry) refreshControls();
       if (state.boot && state.boot.stage !== previous?.stage) {
         announce(BOOT_STAGES.find((stage) => stage.id === state.boot.stage).announcement);
         if (state.boot.stage === 'limine') focusControl(`boot-${state.boot.selectedEntry}`);
@@ -578,6 +609,8 @@ export function createScreen(system = createSystem()) {
     if (controls.has('password')) controls.get('password').value = '';
     controls.clear();
     icons.clear();
+    bootLogo.length = 0;
+    bootThrobber.length = 0;
     root = null;
   }
   update(now);

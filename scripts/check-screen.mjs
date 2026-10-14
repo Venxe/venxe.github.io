@@ -330,7 +330,13 @@ assert.equal(bootSystem.state.boot.stage, 'loader');
 assert.ok(bootScreen.surface.labels.some(({ text }) => text.includes('initramfs-linux-cachyos-lts.img')));
 assert.equal(bootScreen.control('boot-lts').hidden, true);
 assert.ok(!bootScreen.surface.labels.some(({ text }) => /Starting up|Hyprland/.test(text)), 'Loader must only display boot messages');
-bootAt(34550);
+bootAt(30450);
+assert.equal(bootSystem.state.boot.stage, 'plymouth-throbber');
+assert.ok(bootScreen.surface.images.some(({ src, w, h }) => src.endsWith('throbber-00.png') && w === 65 && h === 65));
+assert.equal(bootScreen.surface.labels.length, 0, 'Plymouth must show only its artwork');
+bootAt(32450);
+assert.ok(bootScreen.surface.images.some(({ src, x, y, w, h }) => src.endsWith('animation-00.png') && x === 450 && y === 187.5 && w === 300 && h === 300));
+bootAt(38350);
 assert.equal(bootSystem.state.phase, 'login');
 bootScreen.dispose();
 bootSystem.dispose();
@@ -393,15 +399,96 @@ assert.equal(pointerMenu.desktop.handleKey({ key: 'Enter' }), false, 'Hidden boo
 pointerMenu.root.hidden = false;
 pointerMenu.click('boot-normal');
 assert.equal(pointerSystem.state.boot.stage, 'loader');
-bootTime += 1950;
+bootTime += 450;
 pointerMenu.update(bootTime);
-assert.equal(pointerSystem.state.boot.stage, 'initramfs');
-assert.ok(pointerMenu.surface.labels.some(({ text }) => text === 'Running in initial RAM disk.'));
-bootTime += 900;
+assert.equal(pointerSystem.state.boot.stage, 'plymouth-throbber');
+assert.equal(pointerMenu.surface.labels.length, 0);
+bootTime += 2000;
 pointerMenu.update(bootTime);
-assert.equal(pointerSystem.state.boot.stage, 'services');
-assert.ok(pointerMenu.surface.labels.some(({ text }) => text === 'Welcome to CachyOS!'));
+assert.equal(pointerSystem.state.boot.stage, 'plymouth-logo');
+assert.ok(pointerMenu.surface.images.some(({ src }) => src.endsWith('animation-00.png')));
 assert.ok(!pointerMenu.surface.labels.some(({ text }) => /Hyprland/.test(text)));
 pointerMenu.dispose();
 pointerSystem.dispose();
 console.log('PASS: menu hover/wheel, cancelled taps, tree navigation/folders, Escape/Tab routing, paused uploads and Linux stage rendering.');
+
+// Delay/fail only the browser image boundary; exercise the real screen and system.
+class DeferredBootImage extends TestImage {
+  set src(value) {
+    this.url = value;
+    if (value.includes('/assets/boot/')) { this.complete = false; this.naturalWidth = 0; }
+  }
+  get src() { return this.url; }
+}
+globalThis.Image = DeferredBootImage;
+function delayedBoot(reduced = false) {
+  const imagesAtStart = TestImage.instances.length;
+  const computer = createSystem();
+  computer.update(bootTime, reduced);
+  const screen = setup(computer);
+  assert.ok(!TestImage.instances.slice(imagesAtStart).some((image) => image.src.includes('/assets/boot/')), 'The initial desktop must not request boot artwork');
+  computer.send('shutdown');
+  bootTime += reduced ? 400 : 1400;
+  screen.update(bootTime);
+  computer.send('press');
+  computer.send('release');
+  screen.update(bootTime);
+  const started = bootTime;
+  const images = TestImage.instances.slice(imagesAtStart).filter((image) => image.src.includes('/assets/boot/'));
+  const at = (ms) => { bootTime = started + ms; screen.update(bootTime); };
+  return { computer, screen, images, at };
+}
+function imageLoaded(image) {
+  image.complete = true;
+  image.naturalWidth = image.src.includes('throbber-') ? 65 : 300;
+  image.dispatchEvent(new Event('load'));
+}
+const delayed = delayedBoot();
+assert.equal(delayed.images.length, 129);
+assert.ok(delayed.images[0].src.endsWith('animation-87.png'), 'The static fallback must be requested first');
+delayed.at(5900);
+assert.ok(delayed.screen.surface.labels.some(({ text }) => text === 'CachyOS'), 'Missing final artwork must show a readable fallback');
+imageLoaded(delayed.images[0]);
+delayed.screen.update(bootTime);
+assert.ok(delayed.screen.surface.images.some(({ src }) => src.endsWith('animation-87.png')));
+imageLoaded(delayed.images.find((image) => image.src.endsWith('animation-00.png')));
+delayed.screen.update(bootTime);
+assert.ok(delayed.screen.surface.images.some(({ src }) => src.endsWith('animation-87.png')), 'An incomplete family must retain the static fallback');
+for (const image of delayed.images) imageLoaded(image);
+delayed.at(6900);
+assert.ok(delayed.screen.surface.images.some(({ src }) => src.endsWith('animation-30.png')));
+const frameVersion = delayed.screen.desktop.texture.version;
+const messagesAtFrame = delayed.screen.messages.length;
+delayed.at(6920);
+assert.equal(delayed.screen.desktop.texture.version, frameVersion, 'An unchanged animation frame must not upload again');
+assert.equal(delayed.screen.messages.length, messagesAtFrame, 'Animation frames must not repeat stage announcements');
+delayed.at(7380);
+assert.ok(delayed.screen.surface.images.some(({ src }) => src.endsWith('animation-44.png')), 'Preserve the original blank frame instead of substituting a visible logo');
+delayed.at(8834);
+const holdVersion = delayed.screen.desktop.texture.version;
+delayed.at(8934);
+assert.equal(delayed.screen.desktop.texture.version, holdVersion, 'The final logo hold must remain static');
+delayed.screen.dispose();
+imageLoaded(delayed.images[0]);
+delayed.screen.update(bootTime + 10000);
+assert.equal(delayed.screen.desktop.texture.version, holdVersion, 'Disposed image listeners must not update the texture');
+delayed.computer.dispose();
+
+const reducedArtwork = delayedBoot(true);
+assert.equal(reducedArtwork.images.length, 1, 'Reduced motion only requests the final logo');
+imageLoaded(reducedArtwork.images[0]);
+reducedArtwork.at(3800);
+assert.ok(reducedArtwork.screen.surface.images.some(({ src, w }) => src.endsWith('animation-87.png') && w === 300));
+const reducedVersion = reducedArtwork.screen.desktop.texture.version;
+reducedArtwork.at(3900);
+assert.equal(reducedArtwork.screen.desktop.texture.version, reducedVersion);
+reducedArtwork.images[0].naturalWidth = 0;
+reducedArtwork.images[0].dispatchEvent(new Event('error'));
+reducedArtwork.screen.update(bootTime);
+assert.ok(reducedArtwork.screen.surface.labels.some(({ text }) => text === 'CachyOS'));
+reducedArtwork.at(5050);
+assert.equal(reducedArtwork.computer.state.phase, 'login', 'An image failure must never block boot');
+reducedArtwork.screen.dispose();
+reducedArtwork.computer.dispose();
+globalThis.Image = TestImage;
+console.log('PASS: lazy local Plymouth artwork, delayed/failed images, static fallback, 30 FPS uploads, blank frames, reduced motion and disposal.');

@@ -117,11 +117,22 @@ export function createScreenPainter(canvas, icons) {
       }
     }
   }
-  function drawBoot({ state, items, focused }) {
+  function drawBoot({ state, items, focused, bootArtwork }) {
     const boot = state.boot;
     context.fillStyle = BOOT_COLORS.background;
     context.fillRect(0, 0, canvas.width, canvas.height);
     context.font = '16px Consolas, "Liberation Mono", monospace';
+    if (boot.stage.startsWith('plymouth-')) {
+      if (bootArtwork) {
+        const { image, size } = bootArtwork;
+        context.drawImage(image, (canvas.width - size) / 2, (canvas.height - size) / 2, size, size);
+      } else {
+        context.textAlign = 'center';
+        context.fillStyle = '#ffffff';
+        context.fillText('CachyOS', canvas.width / 2, canvas.height / 2);
+      }
+      return;
+    }
     if (boot.stage === 'limine') {
       context.drawImage(bootWallpaper, 0, 0);
       context.font = `${BOOT_MENU.fontSize}px Consolas, "Liberation Mono", monospace`;

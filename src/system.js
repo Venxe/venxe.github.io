@@ -1,4 +1,4 @@
-import { BOOT_ENTRIES, BOOT_STAGES } from './boot-profile.js';
+import { BOOT_ENTRIES, BOOT_STAGES, BOOT_ANIMATION } from './boot-profile.js';
 
 // This is a local desktop simulation, not an authentication boundary.
 const PASSWORD_DIGEST = '8cd6cb7e1601eb5dcd0a0d3d8f62c2dd8ee483819f9130a34259a217e927679f';
@@ -33,11 +33,14 @@ export function createSystem() {
     const lines = stage.id === 'loader' ? entry.loadingLines : stage.lines;
     const elapsed = Math.max(0, now - started) * stage.duration / (duration() || stage.duration);
     const count = lines.filter((line) => elapsed >= line.at).length;
+    const frame = Math.floor(Math.max(0, now - started) * BOOT_ANIMATION.fps / 1000);
+    const frameIndex = stage.id === 'plymouth-hold' || (stage.id.startsWith('plymouth-') && reducedMotion) ? BOOT_ANIMATION.logoFrames - 1
+      : stage.id === 'plymouth-throbber' ? frame % BOOT_ANIMATION.throbberFrames
+        : stage.id === 'plymouth-logo' ? Math.min(frame, BOOT_ANIMATION.logoFrames - 1) : null;
     const countdownSeconds = stage.id === 'limine' && !bootInterrupted ? Math.max(0, Math.ceil((duration() - (now - started)) / 1000)) : null;
-    if (boot?.stage === stage.id && boot.selectedEntry === selectedEntry && boot.countdownSeconds === countdownSeconds && boot.lines.length === count) return;
+    if (boot?.stage === stage.id && boot.selectedEntry === selectedEntry && boot.countdownSeconds === countdownSeconds && boot.lines.length === count && boot.frameIndex === frameIndex) return;
     const visibleLines = lines.slice(0, count);
-    if (stage.id === 'kernel' && visibleLines.length) visibleLines[0] = Object.freeze({ ...visibleLines[0], text: `[    0.000000] Linux version ${entry.version} (x86_64)` });
-    boot = Object.freeze({ stage: stage.id, selectedEntry, countdownSeconds, lines: Object.freeze(visibleLines) });
+    boot = Object.freeze({ stage: stage.id, selectedEntry, countdownSeconds, frameIndex, lines: Object.freeze(visibleLines) });
   }
   function enter(next, at = now) {
     phase = next;

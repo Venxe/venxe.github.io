@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { createSystem } from '../src/system.js';
 
 let now = 0;
@@ -12,19 +14,19 @@ system.send('release');
 const start = now;
 const at = (ms) => { now = start + ms; system.update(); };
 assert.equal(system.state.boot.stage, 'firmware');
-for (const [ms, stage] of [[450, 'limine'], [3450, 'loader'], [4150, 'kernel'],
-  [5400, 'initramfs'], [6300, 'services'], [7800, 'handoff']]) {
+for (const [ms, stage] of [[450, 'limine'], [3450, 'loader'], [3900, 'plymouth-throbber'],
+  [5900, 'plymouth-logo'], [8834, 'plymouth-hold'], [9134, 'handoff']]) {
   at(ms);
   assert.equal(system.state.phase, 'booting');
   assert.equal(system.state.boot.stage, stage);
 }
-at(7999);
+at(9283);
 assert.equal(system.state.phase, 'booting');
-at(8000);
+at(9284);
 assert.equal(system.state.phase, 'login');
 assert.equal(system.state.boot, null);
 system.dispose();
-console.log('PASS: eight-second cold boot follows firmware, Limine, loader, kernel, initramfs, services and login.');
+console.log('PASS: quiet cold boot follows firmware, Limine, one loader screen, Plymouth and login in 9284ms.');
 
 function coldBoot(reducedMotion = false) {
   const computer = createSystem();
@@ -61,9 +63,32 @@ now += 300;
 menu.update();
 assert.ok(menu.state.boot.lines.some(({ text }) => text.includes('initramfs-linux-cachyos-lts.img')));
 assert.ok(menu.state.boot.lines.some(({ text }) => text.includes('vmlinuz-linux-cachyos-lts')));
-now += 400;
+now += 150;
 menu.update();
-assert.ok(menu.state.boot.lines.some(({ text }) => text.includes('6.12.0-cachyos-lts')));
+assert.equal(menu.state.boot.stage, 'plymouth-throbber');
+assert.equal(menu.state.boot.frameIndex, 0);
+assert.equal(menu.state.boot.lines.length, 0, 'Quiet splash must suppress kernel and service logs');
+const firstFrame = menu.state.boot;
+now += 20;
+menu.update();
+assert.equal(menu.state.boot, firstFrame, 'Updates within one 30 FPS frame must reuse the snapshot');
+now += 80;
+menu.update();
+assert.equal(menu.state.boot.frameIndex, 3, 'Frames follow elapsed time rather than update count');
+now += 1900;
+menu.update();
+assert.equal(menu.state.boot.stage, 'plymouth-logo');
+assert.equal(menu.state.boot.frameIndex, 0);
+now += 1000;
+menu.update();
+assert.equal(menu.state.boot.frameIndex, 30);
+now += 1933;
+menu.update();
+assert.equal(menu.state.boot.frameIndex, 87, 'The logo plays once and clamps to the final frame');
+now++;
+menu.update();
+assert.equal(menu.state.boot.stage, 'plymouth-hold');
+assert.equal(menu.state.boot.frameIndex, 87);
 menu.send('boot-select', 'normal');
 assert.equal(menu.state.boot.selectedEntry, 'lts', 'Selection must be locked after leaving Limine');
 now += 10000;
@@ -74,12 +99,12 @@ now += 2000;
 menu.update();
 assert.equal(menu.state.boot.stage, 'firmware');
 assert.equal(menu.state.boot.selectedEntry, 'normal', 'A fresh boot must restore the default');
-now += 8000;
+now += 9284;
 menu.update();
 assert.equal(menu.state.phase, 'login');
 menu.dispose();
 
-for (const ms of [0, 450, 3450, 4150, 5400, 6300, 7800]) {
+for (const ms of [0, 450, 3450, 3900, 5900, 8834, 9134]) {
   const computer = coldBoot();
   now += ms;
   computer.update();
@@ -101,11 +126,48 @@ assert.equal(reduced.state.boot.countdownSeconds, 3, 'Reduced motion must preser
 reduced.send('lid', true);
 reduced.send('boot-confirm');
 assert.equal(reduced.state.boot.stage, 'limine', 'Closed lids must block boot commands');
-now += 4799;
+now += 4649;
 reduced.update();
 assert.equal(reduced.state.boot.stage, 'handoff');
 now++;
 reduced.update();
-assert.equal(reduced.state.phase, 'login', 'Reduced boot must finish in 5200ms behind a closed lid');
+assert.equal(reduced.state.phase, 'login', 'Reduced boot must finish in 5050ms behind a closed lid');
 reduced.dispose();
 console.log('PASS: menu interruption/LTS, immutable snapshots, background catch-up, restart reset, power holds and reduced-motion closed-lid boot.');
+
+const staticBoot = coldBoot(true);
+now += 3800;
+staticBoot.update();
+assert.equal(staticBoot.state.boot.stage, 'plymouth-throbber');
+assert.equal(staticBoot.state.boot.frameIndex, 87, 'Reduced motion uses the final logo throughout Plymouth');
+const staticFrame = staticBoot.state.boot;
+now += 100;
+staticBoot.update();
+assert.equal(staticBoot.state.boot, staticFrame, 'Reduced motion must not animate the logo');
+staticBoot.dispose();
+
+const cancelled = coldBoot();
+now += 6000;
+cancelled.update();
+cancelled.send('press');
+now += 1500;
+cancelled.update();
+cancelled.send('cancel-press');
+now += 1784;
+cancelled.update();
+assert.equal(cancelled.state.phase, 'login', 'Cancelling a hold during Plymouth lets boot finish');
+cancelled.dispose();
+console.log('PASS: reduced static logo and cancelled power hold during Plymouth.');
+
+const assets = new URL('../assets/boot/cachyos/', import.meta.url);
+const manifest = JSON.parse(await readFile(new URL('manifest.json', assets), 'utf8'));
+assert.equal(Object.keys(manifest.files).length, 129);
+for (const [name, record] of Object.entries(manifest.files)) {
+  const bytes = await readFile(new URL(name, assets));
+  assert.equal(bytes.subarray(0, 8).toString('hex'), '89504e470d0a1a0a', `${name} must be PNG`);
+  const size = name.startsWith('animation-') ? 300 : 65;
+  assert.equal(bytes.readUInt32BE(16), size);
+  assert.equal(bytes.readUInt32BE(20), size);
+  assert.equal(createHash('sha256').update(bytes).digest('hex'), record.sha256, `${name} must match the original artwork`);
+}
+console.log('PASS: all 129 original Plymouth PNG frames have the recorded dimensions and checksums.');
