@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { createScene } from './scene.js';
 import { SETTINGS } from './config.js';
+import { bindPowerInput } from './power-input.js';
 
 export function start(showError) {
   const container = document.querySelector('#scene');
@@ -24,16 +25,16 @@ export function start(showError) {
   const motionOffset = new THREE.Vector3();
   const motionSpherical = new THREE.Spherical();
   const lastFreePose = { position: camera.position.clone(), target: controls.target.clone() };
-  const initialFocusPose = app.laptopPose();
+  const initialLaptopPose = app.laptopPose();
   const initialScreenPose = app.screenPose();
   const initialHomePose = app.homePose();
   let viewMode = 'free';
   let transition = null;
   let previousPose = null;
   let lastDistance = controls.getDistance();
-  let focusDistance = initialFocusPose.position.distanceTo(initialFocusPose.target);
+  let laptopDistance = initialLaptopPose.position.distanceTo(initialLaptopPose.target);
   let screenDistance = initialScreenPose.position.distanceTo(initialScreenPose.target);
-  let enterDistance = Math.max(initialHomePose.position.distanceTo(initialHomePose.target) * SETTINGS.focusEnterRatio, focusDistance * SETTINGS.focusApproachRatio);
+  let enterDistance = Math.max(initialHomePose.position.distanceTo(initialHomePose.target) * SETTINGS.focusEnterRatio, laptopDistance * SETTINGS.focusApproachRatio);
   let wheelTime = -Infinity;
   let wheelGesture = null;
   let touchGesture = null;
@@ -44,8 +45,6 @@ export function start(showError) {
   let disposed = false;
   let touchedCamera = false;
   let desktopPointer = null;
-  let powerPress = null;
-  let powerClickHandledAt = -Infinity;
   let lastSystemPhase = system.state.phase;
 
   function announce(message) { announcement.textContent = message; }
@@ -77,7 +76,7 @@ export function start(showError) {
   }
   function updateControls() {
     controls.enableRotate = viewMode === 'free';
-    controls.minDistance = viewMode === 'free' ? SETTINGS.minSceneDistance : viewMode === 'laptop' ? focusDistance * SETTINGS.focusMinRatio : screenDistance;
+    controls.minDistance = viewMode === 'free' ? SETTINGS.minSceneDistance : viewMode === 'laptop' ? laptopDistance * SETTINGS.focusMinRatio : screenDistance;
     controls.enableDamping = !reducedMotion.matches;
   }
   function updateHud() {
@@ -106,7 +105,7 @@ export function start(showError) {
     updateDesktopControls();
   }
   function moveTo(pose) {
-    cancelPowerPress();
+    powerInput.cancel();
     const fromOrbit = new THREE.Spherical().setFromVector3(camera.position.clone().sub(controls.target));
     const toOrbit = new THREE.Spherical().setFromVector3(pose.position.clone().sub(pose.target));
     // Take the short arc around the scene instead of a line through the laptop.
@@ -171,96 +170,25 @@ export function start(showError) {
     const distance = controls.getDistance();
     if (distance < lastDistance - 1e-6) {
       if (viewMode === 'free' && distance <= enterDistance) openLaptop(lastFreePose);
-      else if (viewMode === 'laptop' && distance <= focusDistance * SETTINGS.focusMinRatio + 1e-6) changeView('screen', app.screenPose());
+      else if (viewMode === 'laptop' && distance <= laptopDistance * SETTINGS.focusMinRatio + 1e-6) changeView('screen', app.screenPose());
     } else if (viewMode !== 'free' && distance > lastDistance + 1e-6) stepBack();
-    if (!transition && activeZoomGesture && viewMode === 'laptop') applyPose(app.laptopPose(distance / focusDistance));
+    if (!transition && activeZoomGesture && viewMode === 'laptop') applyPose(app.laptopPose(distance / laptopDistance));
     rememberCamera();
   }
   // Capture input before OrbitControls so inertia cannot skip a settled stage.
   function powerAvailable() {
     return !transition && !contextLost && !disposed && !document.hidden && !lid.closed && !lid.moving;
   }
-  function cancelPowerPress() {
-    system.send('cancel-press');
-    keyboard.setPressed('Power', false);
-    powerPress = null;
-  }
-  function beginPowerPress(source, event) {
-    if (!powerAvailable() || powerPress) return;
-    powerPress = { source, id: event.pointerId, x: event.clientX, y: event.clientY };
-    system.send('press');
-    keyboard.setPressed('Power', true);
-    announce(system.state.phase === 'off' ? 'Release to start up.' : 'Hold for two seconds to power off.');
-  }
-  function endPowerPress() {
-    if (powerPress && powerPress.source !== 'canvas') powerClickHandledAt = Date.now();
-    system.send('release');
-    keyboard.setPressed('Power', false);
-    powerPress = null;
-  }
-  // Own the power gesture before OrbitControls can interpret it as a camera drag.
-  canvas.addEventListener('pointerdown', (event) => {
-    if (powerPress) {
-      cancelPowerPress();
-      event.stopImmediatePropagation();
-      return;
-    }
-    if (event.button !== 0 || touchPointers.size || !powerAvailable() || app.pickAt(event.clientX, event.clientY)?.kind !== 'power') return;
-    beginPowerPress('canvas', event);
-    canvas.setPointerCapture(event.pointerId);
-    canvas.focus({ preventScroll: true });
-    event.preventDefault();
-    event.stopImmediatePropagation();
-  }, captureOptions);
-  canvas.addEventListener('pointermove', (event) => {
-    if (powerPress?.source !== 'canvas' || powerPress.id !== event.pointerId) return;
-    if (Math.hypot(event.clientX - powerPress.x, event.clientY - powerPress.y) > SETTINGS.dragThreshold
-      || app.pickAt(event.clientX, event.clientY)?.kind !== 'power') cancelPowerPress();
-    event.preventDefault();
-    event.stopImmediatePropagation();
-  }, captureOptions);
-  canvas.addEventListener('pointerup', (event) => {
-    if (powerPress?.source !== 'canvas' || powerPress.id !== event.pointerId) return;
-    if (powerAvailable() && app.pickAt(event.clientX, event.clientY)?.kind === 'power') endPowerPress();
-    else cancelPowerPress();
-    canvas.releasePointerCapture(event.pointerId);
-    event.preventDefault();
-    event.stopImmediatePropagation();
-  }, captureOptions);
-  for (const type of ['pointercancel', 'lostpointercapture', 'pointerleave']) {
-    canvas.addEventListener(type, () => { if (powerPress?.source === 'canvas') cancelPowerPress(); }, captureOptions);
-  }
-  powerButton.addEventListener('keydown', (event) => {
-    if (!['Enter', ' '].includes(event.key)) return;
-    event.preventDefault();
-    if (!event.repeat) beginPowerPress('keyboard', event);
-  }, listenerOptions);
-  powerButton.addEventListener('keyup', (event) => {
-    if (['Enter', ' '].includes(event.key) && powerPress?.source === 'keyboard') { event.preventDefault(); endPowerPress(); }
-  }, listenerOptions);
-  powerButton.addEventListener('pointerdown', (event) => {
-    if (powerPress) { cancelPowerPress(); return; }
-    if (event.button === 0) { beginPowerPress('button', event); powerButton.setPointerCapture(event.pointerId); }
-  }, listenerOptions);
-  powerButton.addEventListener('pointerup', (event) => {
-    if (powerPress?.source === 'button' && powerPress.id === event.pointerId) endPowerPress();
-  }, listenerOptions);
-  powerButton.addEventListener('pointermove', (event) => {
-    if (powerPress?.source === 'button' && Math.hypot(event.clientX - powerPress.x, event.clientY - powerPress.y) > SETTINGS.dragThreshold) cancelPowerPress();
-  }, listenerOptions);
-  for (const type of ['blur', 'pointercancel', 'lostpointercapture', 'pointerleave']) powerButton.addEventListener(type, () => {
-    if (powerPress && powerPress.source !== 'canvas') cancelPowerPress();
-  }, listenerOptions);
-  powerButton.addEventListener('click', (event) => {
-    if (Date.now() - powerClickHandledAt < 100) return;
-    // Assistive technologies can activate a button without a preceding key/pointer event.
-    if (event.detail === 0 && powerAvailable() && system.state.phase === 'off') {
-      system.send('press');
-      system.send('release');
-    }
-  }, listenerOptions);
+  const powerInput = bindPowerInput({
+    canvas, button: powerButton, system, keyboard,
+    pickAt: app.pickAt,
+    isAvailable: powerAvailable,
+    hasTouchPointers: () => touchPointers.size > 0,
+    announce,
+    signal: events.signal,
+  });
   canvas.addEventListener('wheel', (event) => {
-    if (powerPress) cancelPowerPress();
+    if (powerInput.active) powerInput.cancel();
     if (event.deltaY === 0) return;
     if (desktopInputEnabled() && desktop.handleInput(event, desktopUv(event))) {
       event.preventDefault();
@@ -344,7 +272,7 @@ export function start(showError) {
   cameraCoverButton.addEventListener('click', toggleCameraCover, listenerOptions);
   function toggleLaptopLid() {
     if (contextLost || disposed || document.hidden) return;
-    cancelPowerPress();
+    powerInput.cancel();
     lid.setClosed(!lid.closed);
     if (lid.closed && viewMode !== 'free') leaveLaptop();
     lidButton.setAttribute('aria-pressed', String(lid.closed));
@@ -357,7 +285,7 @@ export function start(showError) {
     if (keyboard.reset()) renderer.shadowMap.needsUpdate = true;
   }
   function resetInput() {
-    cancelPowerPress();
+    powerInput.cancel();
     resetKeyboard();
     desktopPointer = null;
     desktop.handleInput({ type: 'pointercancel' }, null);
@@ -503,17 +431,17 @@ export function start(showError) {
   }
   const observer = new ResizeObserver(() => {
     if (disposed || contextLost) return;
-    const zoomRatio = viewMode === 'laptop' && !transition ? controls.getDistance() / focusDistance : 1;
+    const zoomRatio = viewMode === 'laptop' && !transition ? controls.getDistance() / laptopDistance : 1;
     activeZoomGesture = null;
     app.resize();
-    const focusPose = app.laptopPose();
+    const laptopPose = app.laptopPose();
     const screenPose = app.screenPose();
     const homePose = app.homePose();
-    focusDistance = focusPose.position.distanceTo(focusPose.target);
+    laptopDistance = laptopPose.position.distanceTo(laptopPose.target);
     screenDistance = screenPose.position.distanceTo(screenPose.target);
-    enterDistance = Math.max(homePose.position.distanceTo(homePose.target) * SETTINGS.focusEnterRatio, focusDistance * SETTINGS.focusApproachRatio);
+    enterDistance = Math.max(homePose.position.distanceTo(homePose.target) * SETTINGS.focusEnterRatio, laptopDistance * SETTINGS.focusApproachRatio);
     updateControls();
-    if (transition) moveTo(viewMode === 'free' ? returnPose() : viewMode === 'laptop' ? focusPose : screenPose);
+    if (transition) moveTo(viewMode === 'free' ? returnPose() : viewMode === 'laptop' ? laptopPose : screenPose);
     else {
       if (viewMode === 'screen') applyPose(screenPose);
       else if (viewMode === 'laptop') {

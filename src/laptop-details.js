@@ -3,8 +3,6 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { KEYBOARD_WELL } from './keyboard.js';
 import { LAPTOP_SIZE, LAPTOP_DEPTH_SCALE } from './config.js';
 
-export { LAPTOP_SIZE } from './config.js';
-
 const PORT_LAYOUT = [
   { id: 'power-left', type: 'power', side: -1, z: -0.58, y: 0.006, width: 0.054, height: 0.054, radius: 0.027 },
   { id: 'usb-c-left', type: 'usb-c', side: -1, z: -0.27, y: 0.006, width: 0.09, height: 0.032, radius: 0.016 },

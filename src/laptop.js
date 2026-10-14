@@ -1,10 +1,10 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { SETTINGS, LAPTOP_DEPTH_SCALE } from './config.js';
+import { SETTINGS, LAPTOP_SIZE, LAPTOP_DEPTH_SCALE } from './config.js';
 import { createScreen } from './screen.js';
 import { createKeyboard } from './keyboard.js';
 import { createSystem } from './system.js';
-import { createLaptopBody, createWebcam, LAPTOP_SIZE } from './laptop-details.js';
+import { createLaptopBody, createWebcam } from './laptop-details.js';
 
 const LID_OPEN_ANGLE = THREE.MathUtils.degToRad(-20);
 const LID_CLOSED_ANGLE = Math.PI / 2;
