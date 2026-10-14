@@ -312,7 +312,7 @@ export function runHardwareInteractions() {
   displayPower.tick(14);
   assert.equal(displayMaterial.color.r, 1, 'The display must finish waking after the hinge stops moving');
   assert.ok(displayMaterial.map.version > desktopTextureVersion, 'Closing the lid must replace the desktop with the login screen');
-  assert.equal(displayMaterial.map.image.labels.length, 2, 'Reopening must show only the clock and date');
+  assert.ok(displayMaterial.map.image.labels.some(label => label.text === 'caelestiafetch.sh'), 'Reopening must show the Caelestia session lock');
   assert.equal(displayMaterial.opacity, 1);
   send(displayButton, 'click');
   displayPower.tick(14);

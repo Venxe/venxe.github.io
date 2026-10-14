@@ -75,6 +75,7 @@ export function setup(width, height, reduceMotion = true) {
   wallTime = clockStart;
   const document = Object.assign(new EventTarget(), { hidden: false, createElement });
   const canvas = Object.assign(new CanvasTarget(), {
+    tagName: 'CANVAS',
     style: {}, getRootNode: () => document, focus() { document.activeElement?.dispatchEvent?.(new Event('blur')); document.activeElement = this; },
     setAttribute() {}, setPointerCapture() {}, releasePointerCapture() {}, remove() {},
     getBoundingClientRect: () => ({ left: 0, top: 0, width, height }),
@@ -213,8 +214,8 @@ export function fullscreenScreen(test) {
   const normal = test.screen.getWorldDirection(new THREE.Vector3());
   assert.ok(test.camera.getWorldDirection(new THREE.Vector3()).dot(normal) < -0.999999, 'Focus must face the screen');
   const { width, height } = test.screen.geometry.parameters;
-  const taskbarCenter = test.screen.localToWorld(new THREE.Vector3(0, height / 2 - height * 18 / test.screen.material.map.image.height, 0)).project(test.camera);
-  assert.ok(taskbarCenter.y > -1 && taskbarCenter.y < 1, 'The top taskbar content must remain visible in fullscreen');
+  const barCenter = test.screen.localToWorld(new THREE.Vector3(-width / 2 + width * 30 / test.screen.material.map.image.width, 0, 0)).project(test.camera);
+  assert.ok(barCenter.x > -1 && barCenter.x < 1, 'The left shell bar must remain visible in fullscreen');
   const bounds = new THREE.Box2();
   for (const x of [-width / 2, width / 2]) {
     for (const y of [-height / 2, height / 2]) {

@@ -2,7 +2,7 @@ import { BOOT_ENTRIES, BOOT_STAGES, BOOT_ANIMATION } from './boot-profile.js';
 
 // This is a local desktop simulation, not an authentication boundary.
 const PASSWORD_DIGEST = '8cd6cb7e1601eb5dcd0a0d3d8f62c2dd8ee483819f9130a34259a217e927679f';
-const DURATIONS = { 'shutting-down': 1400, off: 600, 'signing-out': 350, 'signing-in': 350 };
+const DURATIONS = { 'shutting-down': 1400, off: 600, 'signing-out': 350, 'signing-in': 350, unlocking: 350 };
 
 export function createSystem() {
   let phase = 'desktop';
@@ -20,6 +20,7 @@ export function createSystem() {
   let selectedEntry = 'normal';
   let bootInterrupted = false;
   let boot = null;
+  let displayBrightness = 1;
 
   function duration() {
     if (phase === 'booting' && BOOT_STAGES[bootStage].id === 'limine') return bootInterrupted ? 0 : BOOT_STAGES[bootStage].duration;
@@ -71,12 +72,14 @@ export function createSystem() {
       }
       else if (phase === 'signing-out') enter('login', at);
       else if (phase === 'signing-in') enter(closed ? 'login' : 'desktop', at);
+      else if (phase === 'unlocking') enter(closed ? 'locked' : 'desktop', at);
       else break;
     }
     refreshBoot();
   }
   async function login(password) {
-    if (phase !== 'login' || closed || verifying || typeof password !== 'string' || !password.length || password.length > 128) return;
+    if (!['login', 'locked'].includes(phase) || closed || verifying || typeof password !== 'string' || !password.length || password.length > 128) return;
+    const unlocking = phase === 'locked';
     error = '';
     verifying = true;
     const attempt = ++generation;
@@ -95,7 +98,7 @@ export function createSystem() {
     if (disposed || attempt !== generation) return;
     verifying = false;
     now = Date.now();
-    if (matches) enter('signing-in');
+    if (matches) enter(unlocking ? 'unlocking' : 'signing-in');
     else error = unavailable ? 'Sign in is unavailable. Please try again.' : 'Incorrect password. Try again.';
   }
   function send(event, value) {
@@ -105,7 +108,8 @@ export function createSystem() {
       closed = !!value;
       if (closed) {
         hold = null;
-        if (phase === 'desktop' || phase === 'signing-in' || phase === 'login') enter('login');
+        if (['desktop', 'locked', 'unlocking'].includes(phase)) enter('locked');
+        else if (phase === 'signing-in' || phase === 'login') enter('login');
       }
     } else if (event === 'press') {
       if (!closed && !hold) hold = { started: now, wasOff: phase === 'off' && !restarting };
@@ -122,8 +126,10 @@ export function createSystem() {
       else if (event === 'boot-confirm') { bootStage++; started = now; }
       refreshBoot();
     } else if (event === 'login') return login(value);
+    else if (event === 'lock' && phase === 'desktop') enter('locked');
+    else if (event === 'brightness' && Number.isFinite(value)) displayBrightness = Math.max(0.1, Math.min(1, value));
     else if (event === 'logout' && phase === 'desktop') enter('signing-out');
-    else if (['shutdown', 'restart'].includes(event) && ['desktop', 'login'].includes(phase)) {
+    else if (['shutdown', 'restart'].includes(event) && ['desktop', 'login', 'locked', 'signing-in', 'unlocking'].includes(phase)) {
       restarting = event === 'restart';
       hold = null;
       enter('shutting-down');
@@ -137,7 +143,7 @@ export function createSystem() {
       const brightness = phase === 'off' || boot?.stage === 'firmware' ? 0 : reducedMotion ? 1
         : phase === 'shutting-down' ? Math.min(1, (1 - progress) * 5)
           : 1;
-      return Object.freeze({ phase, boot, error, verifying, restarting, closed, brightness, reducedMotion });
+      return Object.freeze({ phase, boot, error, verifying, restarting, closed, brightness: brightness * displayBrightness, reducedMotion });
     },
     dispose() { disposed = true; hold = null; verifying = false; generation++; },
   };

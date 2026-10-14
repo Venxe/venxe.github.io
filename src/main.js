@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { createScene } from './scene.js';
 import { SETTINGS } from './config.js';
 import { bindPowerInput } from './power-input.js';
+import { isTextInput } from './desktop-theme.js';
 
 export function start(showError) {
   const container = document.querySelector('#scene');
@@ -51,7 +52,7 @@ export function start(showError) {
   desktop.bindControls(desktopControls, announce, events.signal);
   function desktopInputEnabled() {
     return viewMode !== 'free' && !transition && !contextLost && !disposed && !document.hidden && !lid.closed && !lid.moving
-      && (['desktop', 'login'].includes(system.state.phase) || system.state.boot?.stage === 'limine');
+      && (['desktop', 'login', 'locked'].includes(system.state.phase) || system.state.boot?.stage === 'limine');
   }
   function updateDesktopControls() {
     const hidden = !desktopInputEnabled();
@@ -305,7 +306,7 @@ export function start(showError) {
   desktopControls.addEventListener('keydown', handleScreenKey, captureOptions);
   document.addEventListener('keydown', (event) => {
     if (contextLost || disposed || document.hidden) return;
-    if (document.activeElement?.type === 'password' && event.key !== 'Escape') return;
+    if (isTextInput(document.activeElement) && event.key !== 'Escape') return;
     if (document.activeElement === powerButton && ['Enter', ' '].includes(event.key)) return;
     if (!event.repeat && event.code !== 'Power') keyboard.setPressed(event.code, true);
     if (event.key === 'Escape' && !event.repeat && viewMode !== 'free' && !transition) {

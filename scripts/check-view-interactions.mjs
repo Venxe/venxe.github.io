@@ -110,7 +110,7 @@ export function runViewInteractions() {
     test.pinch(0.8);
     assert.equal(test.focused, false, 'A pinch outward must return to free view');
     samePose(test, position, rotation);
-    assert.equal(texture.version, textureVersion, 'Camera and viewport changes must preserve the fixed-size top bar texture');
+    assert.equal(texture.version, textureVersion, 'Camera and viewport changes must preserve the fixed-size desktop texture');
     const idleTextureVersion = texture.version;
     test.tick(2);
     assert.equal(texture.version, idleTextureVersion, 'An unchanged desktop must not upload its texture again');

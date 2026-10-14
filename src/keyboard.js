@@ -120,20 +120,18 @@ export function createKeyboard(deckY) {
 
   const powerIndex = layout.findIndex((key) => key.code === 'Power');
   const powerKey = layout[powerIndex];
-  const powerIcon = new Image();
-  const iconEvents = new AbortController();
-  function drawPowerIcon() {
-    if (!powerIcon.naturalWidth) return;
-    const size = 24;
-    const x = (powerKey.x / keyboardWidth + 0.5) * labels.width;
-    const y = ((powerKey.z - keyboardCenterZ) / keyboardDepth + 0.5) * labels.height;
-    labelContext.drawImage(powerIcon, x - size / 2, y - size / 2, size, size);
-    labelTexture.needsUpdate = true;
-  }
-  powerIcon.addEventListener('load', drawPowerIcon, { signal: iconEvents.signal });
-  labelTexture.addEventListener('dispose', () => iconEvents.abort());
-  powerIcon.src = new URL('../assets/icons/system-shutdown.svg', import.meta.url).href;
-  if (powerIcon.complete) drawPowerIcon();
+  const powerX = (powerKey.x / keyboardWidth + 0.5) * labels.width;
+  const powerY = ((powerKey.z - keyboardCenterZ) / keyboardDepth + 0.5) * labels.height;
+  labelContext.strokeStyle = '#e8edf7';
+  labelContext.lineWidth = 2;
+  labelContext.lineCap = 'round';
+  labelContext.beginPath();
+  labelContext.arc(powerX, powerY, 9, -Math.PI / 3, Math.PI * 4 / 3);
+  labelContext.stroke();
+  labelContext.beginPath();
+  labelContext.moveTo(powerX, powerY - 11);
+  labelContext.lineTo(powerX, powerY - 1);
+  labelContext.stroke();
   const powerLight = new THREE.Mesh(new THREE.CircleGeometry(0.008, 12), new THREE.MeshBasicMaterial({ color: '#b8c9ef', toneMapped: false }));
   powerLight.name = 'power-light';
   powerLight.rotation.x = -Math.PI / 2;

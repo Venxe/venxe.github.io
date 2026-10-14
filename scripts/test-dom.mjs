@@ -24,7 +24,11 @@ export class TestElement extends EventTarget {
     this.context = new Proxy({}, { get: (target, key) => {
       if (key in target) return target[key];
       if (key === 'createLinearGradient' || key === 'createRadialGradient') return () => ({ addColorStop() {} });
+      if (key === 'measureText') return text => ({ width: String(text).length * 8 });
       if (key === 'setTransform') return (value) => { scale = value; };
+      if (key === 'fillRect') return (x, y, w, h) => {
+        if (x === 0 && y === 0 && w === this.width && h === this.height) { this.labels.length = 0; this.images.length = 0; this.boxes.length = 0; this.arcs.length = 0; }
+      };
       if (key === 'fillText') return (text, x, y) => this.labels.push({ text, x: x * scale, y: y * scale });
       if (key === 'drawImage') return (image, x, y, w, h) => {
         if (image.tagName === 'CANVAS') { this.labels.length = 0; this.images.length = 0; this.boxes.length = 0; this.arcs.length = 0; }
@@ -36,6 +40,7 @@ export class TestElement extends EventTarget {
     } });
   }
   append(...elements) { for (const element of elements) { element.parent = this; this.children.push(element); } }
+  remove() { if (this.parent) this.parent.children = this.parent.children.filter(child => child !== this); }
   contains(element) { return element === this || this.children.some((child) => child.contains(element)); }
   setAttribute(name, value) {
     this.attributes.set(name, String(value));

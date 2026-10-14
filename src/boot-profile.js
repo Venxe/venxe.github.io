@@ -4,7 +4,6 @@
 const line = (at, text, status = '') => Object.freeze({ at, text, status });
 const rootUuid = '895a2100-674e-4b20-94e1-5f31d7ea8801';
 const cmdline = `root=UUID=${rootUuid} rootfstype=btrfs rootflags=subvol=@ rw quiet splash loglevel=3 systemd.show_status=auto`;
-export const SESSION_LABEL = 'CachyOS · Hyprland';
 export const BOOT_COLORS = Object.freeze({ background: '#000000', text: '#aaaaaa',
   menuBackground: '#101728', menuText: '#c3c6dc', help: '#a1c99c', accent: '#55ff55', selected: '#c6cce2' });
 export const BOOT_MENU = Object.freeze({ x: 440, y: 298, rowHeight: 20, width: 300, fontSize: 18, cellWidth: 10.8 });

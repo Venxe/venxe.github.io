@@ -29,55 +29,12 @@
       <button id="camera-cover-toggle" class="camera-cover-toggle sr-only" type="button" aria-pressed="false">Camera privacy cover</button>
       <button id="laptop-lid-toggle" class="laptop-lid-toggle sr-only" type="button" aria-pressed="false">Laptop lid</button>
       <button id="laptop-power" class="laptop-power sr-only" type="button" aria-describedby="power-help">Laptop power</button>
-      <p id="power-help" class="sr-only">Click the Power key to start when off. Hold for two seconds to force power off when on or booting. The power menu in quick settings offers Log Out, Restart and Power Off. Startup shows a Limine menu and Linux messages before the clock screen. Logging out or reopening the lid shows the clock screen directly. Press any key, click or tap the clock screen to reveal the password field. The first key only opens the form. Then type your password and press Enter to start the Hyprland session.</p>
-      <div id="desktop-controls" class="sr-only" role="group" aria-label="Laptop desktop" hidden>
-        <section data-boot aria-label="Limine boot menu" aria-describedby="boot-help" hidden>
-          <p id="boot-help">Use Up or Down to select a kernel or folder, Home or End to select the first or last row, and Enter, Space or Right to boot or toggle a folder. Left collapses CachyOS. linux-cachyos-lts uses the long-term support kernel. No snapshots are installed. The default boots after three seconds. A key or mouse interaction cancels automatic boot until you confirm. Escape returns one view and Tab moves focus. Click or tap a row to activate it. Scroll over a row to select without zooming. The E and B editor legends are visual references; entry editing is unavailable.</p>
-          <button type="button" data-control="boot-cachyos" aria-expanded="true">CachyOS</button>
-          <button type="button" data-control="boot-normal" aria-pressed="false">linux-cachyos</button>
-          <button type="button" data-control="boot-lts" aria-pressed="false">linux-cachyos-lts</button>
-          <button type="button" data-control="boot-snapshots" aria-expanded="false">Snapshots</button>
-        </section>
-        <button type="button" data-control="clock" aria-expanded="false" aria-controls="desktop-calendar">Date and time</button>
-        <button type="button" data-control="settings" aria-expanded="false" aria-controls="desktop-settings">Quick settings</button>
-        <button type="button" data-control="power-menu" aria-expanded="false" aria-controls="desktop-power">Power options</button>
-        <section id="desktop-power" data-panel="power" aria-label="Power options" hidden>
-          <button type="button" data-control="logout">Log Out</button>
-          <button type="button" data-control="restart">Restart</button>
-          <button type="button" data-control="shutdown">Power Off</button>
-        </section>
-        <button type="button" data-control="unlock" hidden>Sign in</button>
-        <section data-login aria-label="Sign in to Venxe" hidden>
-          <p data-session></p>
-          <label for="desktop-password">Password</label>
-          <input id="desktop-password" data-control="password" type="password" maxlength="128" autocomplete="current-password" aria-describedby="desktop-login-error" spellcheck="false">
-          <p id="desktop-login-error" data-login-error></p>
-          <button type="button" data-control="login">Sign In</button>
-        </section>
-        <section id="desktop-calendar" data-panel="calendar" aria-label="Calendar" hidden>
-          <p data-control="date-heading"></p>
-          <button type="button" data-control="previous">Previous month</button>
-          <button type="button" data-control="next">Next month</button>
-          <table aria-label="Choose a date">
-            <caption data-control="month"></caption>
-            <thead><tr><th scope="col">Monday</th><th scope="col">Tuesday</th><th scope="col">Wednesday</th><th scope="col">Thursday</th><th scope="col">Friday</th><th scope="col">Saturday</th><th scope="col">Sunday</th></tr></thead>
-            <tbody data-days></tbody>
-          </table>
-          <button type="button" data-control="today">Today</button>
-        </section>
-        <section id="desktop-settings" data-panel="system" aria-label="Quick settings" hidden>
-          <p data-control="battery"></p>
-          <label for="desktop-volume" data-control="volume-label">Volume</label>
-          <button type="button" data-control="mute" aria-pressed="false">Mute sound</button>
-          <input id="desktop-volume" data-control="volume" type="range" min="0" max="100" step="1" value="50">
-          <button type="button" data-control="wifi" aria-pressed="true">Wi-Fi</button>
-          <button type="button" data-control="networks" aria-expanded="false">Choose a Wi-Fi network</button>
-          <button type="button" data-control="network-0">Venxe Studio</button>
-          <button type="button" data-control="network-1">Coffee Corner</button>
-          <button type="button" data-control="power" aria-pressed="false">Balanced</button>
-        </section>
+      <p id="power-help" class="sr-only">Use the physical Power key to start when off. Hold for two seconds to force power off. Caelestia session options offer Lock, Log Out, Restart and Power Off. Startup runs Limine and CachyOS before the SDDM Locklike welcome. Press a key or tap the welcome to open sign in; the first key is not a password character. Type your password and press Enter. Closing the lid locks the existing Hyprland session.</p>
+      <div id="desktop-controls" class="sr-only" role="group" aria-label="Caelestia desktop" hidden>
+        <div data-native></div>
+        <p id="desktop-login-error" data-login-error role="status" aria-live="polite"></p>
       </div>
-      <p id="scene-help" class="sr-only">Drag with a mouse or one finger to rotate the view. Use the mouse wheel or pinch with two fingers to zoom. Zoom in to center the laptop and keyboard, then use a new zoom gesture to view the entire desktop. The desktop keeps its proportions with dark margins where needed; its taskbar and all screen edges remain visible. Each zoom gesture can change only one stage; pause scrolling or lift your fingers before changing another stage. Zoom out or press Escape to return one stage at a time. Use the arrow keys to rotate, plus and minus to zoom, and Enter or Space to focus on the laptop. Release a zoom key before changing another stage. Click or tap the notch at the front center of the laptop to close or open the lid, or use the Laptop lid button with the keyboard. Closing the lid returns to the scene; the screen and camera cover are available again when the lid is fully open. Click or tap the camera cover above the display to open or close it, or use the Camera privacy cover button with the keyboard. In laptop and desktop views, select the centered clock to open the calendar, or the Wi-Fi, sound and battery indicators to open quick settings. Tab to the matching desktop controls to use the keyboard. Use arrow keys to choose calendar dates or adjust volume. Wi-Fi, volume and power mode belong to the simulated laptop. Scroll or drag inside a panel to reveal more controls. Escape closes an open panel before returning one view. Site controls are hidden in the desktop view.</p>
+      <p id="scene-help" class="sr-only">Drag to orbit; wheel or pinch to zoom. Enter or Space focuses the laptop. A new inward gesture shows the complete desktop; outward gestures return one view. Escape closes a desktop surface before returning one view. The left Caelestia bar contains the launcher, five workspaces, clock, network, battery and session controls. Select the clock for Dashboard; the top-right bell opens notifications and the bottom-right sliders open Utilities. Tab to matching native controls. Alt+D opens Launcher; Alt+1 through Alt+5 changes workspace; add Shift to move the active window. Wi-Fi, volume, brightness, weather and resource values belong to this local simulation. Tap the front notch to open or close the lid; tap the camera cover to move it.</p>
       <p id="announcement" class="sr-only" role="status" aria-live="polite"></p>
     </main>
     <noscript><p class="noscript">Enable JavaScript to use this 3D experience.</p></noscript>

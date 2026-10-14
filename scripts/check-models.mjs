@@ -102,8 +102,8 @@ for (const u of [0.01, 0.5, 0.99]) {
     assert.ok(hit.uv.distanceTo(new THREE.Vector2(u, v)) < 1e-6, 'Screen UVs must remain usable for future desktop interactions');
   }
 }
-assert.ok(laptop.screen.material.map.image.labels.some(({ text }) => text === 'venxe'), 'The screen must draw the desktop brand');
-assert.ok(laptop.screen.material.map.image.labels.some(({ text }) => /\d+ \w+\. \d{2}:\d{2}/.test(text)), 'The screen must draw the system date and time');
+assert.ok(laptop.screen.material.map.image.labels.some(({ text }) => text === 'calendar_month'), 'The screen must draw the Caelestia bar');
+assert.ok(laptop.screen.material.map.image.labels.some(({ text }) => /^\d{2}$/.test(text)), 'The bar must draw the local clock');
 const texture = laptop.screen.material.map;
 assert.equal(texture.image.width, 1200);
 assert.equal(texture.image.height, 675);
