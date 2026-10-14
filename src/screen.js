@@ -5,7 +5,7 @@ import { createSystem } from './system.js';
 const NETWORKS = ['Venxe Studio', 'Coffee Corner'];
 const ICON_NAMES = ['audio-volume-high', 'audio-volume-medium', 'audio-volume-low', 'audio-volume-muted',
   'battery-level-80', 'network-wireless-signal-excellent', 'network-wireless-disabled', 'pan-start', 'pan-end',
-  'system-shutdown', 'system-reboot', 'system-log-out'];
+  'system-shutdown', 'system-reboot', 'system-log-out', 'avatar-default'];
 const inside = (point, box) => point && box && point.x >= box.x && point.x < box.x + box.w && point.y >= box.y && point.y < box.y + box.h;
 const dateKey = (date) => `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
 const fullDate = (date) => date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
@@ -79,6 +79,14 @@ export function createScreen(system = createSystem()) {
   let lastVerifying = false;
   let lastClosed = system.state.closed;
   let animationFrame = -1;
+  let loginRevealed = false;
+  let revealStarted = 0;
+  let revealProgress = 0;
+
+  function loginMotion() {
+    const eased = 1 - (1 - revealProgress) ** 3;
+    return { eased, offset: 22 * (1 - eased), opacity: Math.max(0, (eased - 0.15) / 0.85) };
+  }
 
   for (const name of ICON_NAMES) {
     const image = new Image();
@@ -95,11 +103,14 @@ export function createScreen(system = createSystem()) {
     const state = system.state;
     if (!['desktop', 'login'].includes(state.phase)) return;
     if (state.phase === 'login') {
-      item('password', 'Password', 442, 352, 316, 44, { inPanel: false, type: 'password', disabled: state.verifying });
-      item('login', state.verifying ? 'Signing in…' : 'Sign In', 442, 430, 316, 44,
-        { inPanel: false, selected: true, disabled: state.verifying });
-      item('power-menu', 'Power options', canvas.width - 52, 0, 44, barHeight,
-        { inPanel: false, icon: 'system-shutdown', iconOnly: true });
+      if (loginRevealed) {
+        const { offset } = loginMotion();
+        item('password', 'Password', 420, 416 + offset, 302, 52, { inPanel: false, type: 'password', disabled: state.verifying });
+        item('login', state.verifying ? 'Signing in…' : 'Sign In', 730, 416 + offset, 50, 52,
+          { inPanel: false, selected: true, icon: 'pan-end', iconOnly: true, disabled: state.verifying });
+        item('power-menu', 'Power options', canvas.width - 52, 0, 44, barHeight,
+          { inPanel: false, icon: 'system-shutdown', iconOnly: true });
+      } else item('unlock', 'Sign in', 0, 0, canvas.width, canvas.height, { inPanel: false });
     } else {
       // The bar, panels and hit regions share fixed desktop coordinates.
       item('clock', clock, (canvas.width - 140) / 2, 0, 140, barHeight, { inPanel: false });
@@ -161,14 +172,16 @@ export function createScreen(system = createSystem()) {
     const image = icons.get(name);
     if (!image?.complete || !image.naturalWidth) return;
     context.save();
-    context.globalAlpha = opacity;
+    context.globalAlpha *= opacity;
     context.drawImage(image, x, y, 16, 16);
     context.restore();
   }
   function drawItem(entry) {
+    // The clock screen is an unlabeled activation surface with a native accessible button.
+    if (entry.id === 'unlock') return;
     const box = entry;
     const activeTrigger = panel === 'calendar' ? 'clock' : panel === 'system' ? 'settings' : null;
-    if (entry.type === 'button' && (entry.inPanel || entry.selected || entry.id === activeTrigger || hover === entry.id)) rounded(box, entry.selected ? '#3b5f89' : hover === entry.id ? '#ffffff20' : '#ffffff0b');
+    if (entry.type === 'button' && (entry.inPanel || entry.selected || entry.id === activeTrigger || hover === entry.id)) rounded(box, entry.selected ? '#3b5f89' : hover === entry.id ? '#ffffff20' : '#ffffff0b', entry.id === 'login' ? 14 : 10);
     if (entry.today || (focused === entry.id && entry.type !== 'password')) {
       context.strokeStyle = '#b8c9ef';
       context.lineWidth = focused === entry.id ? 2 : 1;
@@ -177,19 +190,17 @@ export function createScreen(system = createSystem()) {
       context.stroke();
     }
     if (entry.type === 'password') {
-      rounded(box, '#101624d9', 9);
+      rounded(box, '#ffffff12', 14);
       context.font = '16px "Segoe UI", Arial, sans-serif';
       context.fillStyle = '#c5cee0';
       context.textAlign = 'left';
       const length = controls.get('password')?.value?.length || 0;
       context.fillText(length ? '•'.repeat(Math.min(length, 24)) : 'Password', box.x + 14, box.y + box.h / 2, box.w - 28);
-      if (focused === entry.id) {
-        context.strokeStyle = '#b8c9ef';
-        context.lineWidth = 2;
-        context.beginPath();
-        context.roundRect(box.x + 1, box.y + 1, box.w - 2, box.h - 2, 9);
-        context.stroke();
-      }
+      context.strokeStyle = system.state.error ? '#efb2b8' : focused === entry.id ? '#b8c9ef' : '#ffffff30';
+      context.lineWidth = focused === entry.id ? 2 : 1;
+      context.beginPath();
+      context.roundRect(box.x + 1, box.y + 1, box.w - 2, box.h - 2, 14);
+      context.stroke();
     } else if (entry.id === 'settings') {
       const names = [wifiIcon(), volumeIcon(), 'battery-level-80'];
       if (names.some(iconFailed)) {
@@ -212,7 +223,7 @@ export function createScreen(system = createSystem()) {
         context.font = '12px "Segoe UI", Arial, sans-serif';
         context.fillStyle = '#e8edf7';
         context.textAlign = 'center';
-        context.fillText({ previous: 'Prev', next: 'Next', mute: 'Sound', networks: 'More', 'power-menu': 'Power' }[entry.id], box.x + box.w / 2, box.y + box.h / 2, box.w - 8);
+        context.fillText({ previous: 'Prev', next: 'Next', mute: 'Sound', networks: 'More', 'power-menu': 'Power', login: 'Sign In' }[entry.id], box.x + box.w / 2, box.y + box.h / 2, box.w - 8);
       }
       if (!entry.iconOnly) {
         context.fillStyle = entry.muted ? '#a5afc0' : '#e8edf7';
@@ -232,23 +243,41 @@ export function createScreen(system = createSystem()) {
       context.fillStyle = state.phase === 'off' ? '#000000' : '#0d1329c9';
       context.fillRect(0, 0, canvas.width, canvas.height);
       if (state.phase === 'login') {
+        const { eased, offset, opacity } = loginMotion();
         context.fillStyle = '#e8edf7';
         context.textAlign = 'center';
-        context.font = '300 52px "Segoe UI", Arial, sans-serif';
-        context.fillText(today.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }), 600, 160);
-        context.font = '15px "Segoe UI", Arial, sans-serif';
+        context.font = `300 ${110 - 54 * eased}px "Segoe UI", Arial, sans-serif`;
+        context.fillText(today.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }), 600, 300 - 175 * eased);
+        context.font = `${20 - 5 * eased}px "Segoe UI", Arial, sans-serif`;
         context.fillStyle = '#b8c9df';
-        context.fillText(fullDate(today), 600, 207);
-        rounded({ x: 410, y: 252, w: 380, h: 256 }, '#202b3ee8', 22);
-        context.fillStyle = '#e8edf7';
-        context.font = '600 25px "Segoe UI", Arial, sans-serif';
-        context.fillText('venxe', 600, 297);
-        context.fillStyle = '#a5afc0';
-        context.font = '13px "Segoe UI", Arial, sans-serif';
-        context.fillText(state.reason === 'locked' ? 'Welcome back' : 'Sign in to your workspace', 600, 325);
-        context.fillStyle = '#efb2b8';
-        context.font = '12px "Segoe UI", Arial, sans-serif';
-        context.fillText(state.error, 600, 410, 330);
+        context.fillText(fullDate(today), 600, 382 - 202 * eased);
+        if (loginRevealed) {
+          context.save();
+          context.globalAlpha = opacity;
+          const avatar = context.createLinearGradient(552, 237 + offset, 648, 333 + offset);
+          avatar.addColorStop(0, '#7795ba');
+          avatar.addColorStop(1, '#3c5278');
+          rounded({ x: 552, y: 237 + offset, w: 96, h: 96 }, avatar, 48);
+          const image = icons.get('avatar-default');
+          if (image.complete && image.naturalWidth) context.drawImage(image, 574, 259 + offset, 52, 52);
+          else {
+            context.fillStyle = '#e8edf7';
+            context.font = '500 36px "Segoe UI", Arial, sans-serif';
+            context.fillText('V', 600, 285 + offset);
+          }
+          context.fillStyle = '#e8edf7';
+          context.font = '600 25px "Segoe UI", Arial, sans-serif';
+          context.fillText('venxe', 600, 362 + offset);
+          context.font = '13px "Segoe UI", Arial, sans-serif';
+          context.fillStyle = '#efb2b8';
+          context.fillText(state.error, 600, 492 + offset, 360);
+          if (state.verifying) {
+            context.fillStyle = '#a5afc0';
+            context.font = '12px "Segoe UI", Arial, sans-serif';
+            context.fillText('Signing in…', 600, 529 + offset);
+          }
+          context.restore();
+        }
       } else if (state.phase !== 'off') {
         context.textAlign = 'center';
         context.fillStyle = '#e8edf7';
@@ -277,7 +306,12 @@ export function createScreen(system = createSystem()) {
       context.textAlign = 'left';
       context.fillText('venxe', 16, barHeight / 2);
     }
-    items.filter((entry) => !entry.inPanel).forEach(drawItem);
+    items.filter((entry) => !entry.inPanel).forEach((entry) => {
+      context.save();
+      if (entry.id === 'password' || entry.id === 'login') context.globalAlpha = loginMotion().opacity;
+      drawItem(entry);
+      context.restore();
+    });
     if (panelBox) {
       context.save();
       context.shadowColor = '#00000070';
@@ -337,6 +371,7 @@ export function createScreen(system = createSystem()) {
   }
   function activate(id) {
     if (disposed || (!items.some((entry) => entry.id === id && !entry.disabled) && id !== 'dismiss')) return;
+    if (id === 'unlock') { revealLogin(); return; }
     if (id === 'password') { controls.get('password')?.focus({ preventScroll: true }); return; }
     if (id === 'login') { submitLogin(); return; }
     if (['shutdown', 'restart', 'logout'].includes(id)) {
@@ -386,6 +421,23 @@ export function createScreen(system = createSystem()) {
     dirty = true;
     refreshControls();
   }
+  function revealLogin() {
+    if (disposed || system.state.phase !== 'login' || system.state.closed || loginRevealed) return false;
+    loginRevealed = true;
+    revealStarted = now;
+    revealProgress = system.state.reducedMotion ? 1 : 0;
+    dirty = true;
+    refreshControls();
+    if (root && !root.hidden && !document.hidden) controls.get('password')?.focus({ preventScroll: true });
+    announce('Enter your password to sign in.');
+    return true;
+  }
+  function handleKey(event) {
+    if (disposed || document.hidden || root?.hidden || panel || system.state.phase !== 'login' || system.state.closed || loginRevealed) return false;
+    if (event.target?.dataset?.control === 'power-menu') return false;
+    if (!event.repeat) revealLogin();
+    return true;
+  }
   function handleInput(event, uv) {
     if (disposed) return false;
     const point = pointAt(uv);
@@ -432,7 +484,7 @@ export function createScreen(system = createSystem()) {
     root.querySelector('[data-panel="calendar"]').hidden = panel !== 'calendar';
     root.querySelector('[data-panel="system"]').hidden = panel !== 'system';
     root.querySelector('[data-panel="power"]').hidden = panel !== 'power';
-    root.querySelector('[data-login]').hidden = system.state.phase !== 'login';
+    root.querySelector('[data-login]').hidden = system.state.phase !== 'login' || !loginRevealed;
     for (const [id, element] of controls) {
       const entry = items.find((entry) => entry.id === id);
       element.hidden = !entry;
@@ -512,7 +564,7 @@ export function createScreen(system = createSystem()) {
   }
   async function submitLogin() {
     const input = controls.get('password');
-    if (!input || !root || root.hidden || document.hidden || system.state.phase !== 'login' || system.state.verifying) return;
+    if (!input || !root || root.hidden || document.hidden || !loginRevealed || system.state.phase !== 'login' || system.state.verifying) return;
     if (!input.value) { input.focus({ preventScroll: true }); return; }
     const result = system.send('login', input.value);
     input.value = '';
@@ -531,6 +583,8 @@ export function createScreen(system = createSystem()) {
       lastClosed = state.closed;
       if (state.closed) {
         closePanel(false);
+        loginRevealed = false;
+        revealProgress = 0;
         const password = controls.get('password');
         if (password) password.value = '';
         dirty = true;
@@ -542,19 +596,25 @@ export function createScreen(system = createSystem()) {
         gesture = null;
         hover = null;
         focused = null;
+        loginRevealed = false;
+        revealProgress = 0;
         const password = controls.get('password');
         if (password) password.value = '';
         lastPhase = state.phase;
         refreshControls();
-        if (state.phase === 'login' && root && !root.hidden) password?.focus({ preventScroll: true });
+        if (state.phase === 'login' && root && !root.hidden) controls.get('unlock')?.focus({ preventScroll: true });
         else if (state.phase === 'desktop' && root && !root.hidden) controls.get('settings')?.focus({ preventScroll: true });
-        announce({ desktop: 'Signed in.', login: 'Enter your password to sign in.', off: 'Computer powered off. Use the power key to start up.',
+        announce({ desktop: 'Signed in.', login: 'Screen locked.', off: 'Computer powered off. Use the power key to start up.',
           booting: 'Starting up.', 'shutting-down': state.restarting ? 'Restarting.' : 'Shutting down.',
           'signing-out': 'Signing out.', 'signing-in': 'Signing in.' }[state.phase]);
       }
       if (state.error && state.error !== lastError) announce(state.error);
       lastError = state.error;
       lastVerifying = state.verifying;
+      dirty = true;
+    }
+    if (state.phase === 'login' && loginRevealed && revealProgress < 1) {
+      revealProgress = state.reducedMotion ? 1 : Math.max(revealProgress, Math.min(1, (now - revealStarted) / 480));
       dirty = true;
     }
     if (!['desktop', 'login', 'off'].includes(state.phase) && !state.reducedMotion && Math.floor(now / 50) !== animationFrame) {
@@ -585,5 +645,5 @@ export function createScreen(system = createSystem()) {
     root = null;
   }
   update(now);
-  return { texture, update, hitTest, handleInput, closePanel, bindControls, dispose };
+  return { texture, update, hitTest, handleInput, handleKey, closePanel, bindControls, dispose };
 }

@@ -368,6 +368,13 @@ export function start(showError) {
     touchGesture = null;
     activeZoomGesture = null;
   }
+  function handleLoginKey(event) {
+    if (!desktopInputEnabled() || !desktop.handleKey(event)) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }
+  canvas.addEventListener('keydown', handleLoginKey, captureOptions);
+  desktopControls.addEventListener('keydown', handleLoginKey, captureOptions);
   document.addEventListener('keydown', (event) => {
     if (contextLost || disposed || document.hidden) return;
     if (document.activeElement?.type === 'password' && event.key !== 'Escape') return;

@@ -982,7 +982,7 @@ assert.equal(displayPower.focused, true, 'A fully open lid must allow screen foc
 displayPower.tick(14);
 assert.equal(displayMaterial.color.r, 1, 'The display must finish waking after the hinge stops moving');
 assert.ok(displayMaterial.map.version > desktopTextureVersion, 'Closing the lid must replace the desktop with the login screen');
-assert.ok(displayMaterial.map.image.labels.some(({ text }) => text === 'Password'), 'Reopening must show the password field');
+assert.equal(displayMaterial.map.image.labels.length, 2, 'Reopening must show only the clock and date');
 assert.equal(displayMaterial.opacity, 1);
 send(displayButton, 'click');
 displayPower.tick(14);
@@ -1135,7 +1135,15 @@ function powerPoint() {
 const systemGlow = powerFlow.screen.children.find((object) => object.isPointLight);
 powerAction('logout');
 powerFlow.tick(8);
+assert.equal(powerControl('password').hidden, true);
+assert.equal(powerControl('unlock').hidden, false);
+const cameraBeforeReveal = powerFlow.camera.position.clone();
+assert.equal(powerFlow.key('+').defaultPrevented, true);
+powerFlow.tick(10);
+assert.ok(powerFlow.camera.position.distanceTo(cameraBeforeReveal) < 1e-8, 'The wake key must not zoom the camera');
 assert.equal(powerControl('password').hidden, false);
+assert.equal(powerFlow.document.activeElement, powerControl('password'));
+assert.equal(powerControl('password').value, '', 'The first key must only reveal the form');
 assert.equal(powerControl('clock').hidden, true);
 const digestBoundary = crypto.subtle.digest;
 crypto.subtle.digest = async () => Uint8Array.from(Buffer.from('8cd6cb7e1601eb5dcd0a0d3d8f62c2dd8ee483819f9130a34259a217e927679f', 'hex')).buffer;
@@ -1159,7 +1167,13 @@ powerFlow.pointer('pointerup', powerX, powerY);
 powerFlow.tick(8);
 assert.ok(powerFlow.screen.material.map.image.labels.some(({ text }) => text === 'Starting up…'));
 powerFlow.tick(28);
-assert.equal(powerControl('password').hidden, false);
+assert.equal(powerControl('unlock').hidden, false);
+assert.equal(powerControl('password').hidden, true);
+const [unlockX, unlockY] = powerFlow.screenPoint(0.5, 0.5);
+powerFlow.pointer('pointerdown', unlockX, unlockY, 1, 'touch');
+powerFlow.pointer('pointerup', unlockX, unlockY, 1, 'touch');
+powerFlow.tick(10);
+assert.equal(powerControl('password').hidden, false, 'A screen tap must reveal the login form');
 assert.equal(powerLed.visible, true);
 
 for (const cancellation of ['pointercancel', 'lostpointercapture', 'pointerleave']) {
@@ -1199,7 +1213,7 @@ assert.equal(powerFlow.screen.material.color.r, 0, 'Releasing must not restart a
 const hardwarePowerButton = powerFlow.elements.get('laptop-power');
 send(hardwarePowerButton, 'click', { detail: 0 });
 powerFlow.tick(36);
-assert.equal(powerControl('password').hidden, false, 'Assistive click must start a powered-off laptop');
+assert.equal(powerControl('unlock').hidden, false, 'Assistive click must start a powered-off laptop at the clock screen');
 send(hardwarePowerButton, 'keydown', { key: 'Enter' });
 powerFlow.tick(40);
 send(hardwarePowerButton, 'keyup', { key: 'Enter' });
