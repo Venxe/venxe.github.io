@@ -70,6 +70,28 @@ try {
     const shot = await call('Page.captureScreenshot', { format: 'png' });
     await writeFile(resolve(output, `${name}.png`), Buffer.from(shot.data, 'base64'));
   }
+  async function checkSessionIcons() {
+    const mismatches = await evaluate(`(async () => {
+      const { drawing } = await import('/src/desktop-paint.js');
+      const { FONTS } = await import('/src/desktop-theme.js');
+      const original = new FontFace('Original Session Icons', 'url(/assets/desktop/MaterialSymbolsRounded.woff2)', { weight: '100 700' });
+      await original.load(); document.fonts.add(original);
+      try {
+        await document.fonts.load('400 32px "' + FONTS.icons + '"');
+        return ['lock', 'logout', 'restart_alt', 'power_settings_new'].filter(name => {
+          const actual = document.createElement('canvas'), expected = document.createElement('canvas');
+          actual.width = expected.width = 128; actual.height = expected.height = 64;
+          const a = actual.getContext('2d'), b = expected.getContext('2d');
+          drawing(a).icon(name, 64, 32, 32, '#fff');
+          b.font = '400 32px "Original Session Icons"'; b.fillStyle = '#fff';
+          b.textAlign = 'center'; b.textBaseline = 'middle'; b.fillText(name, 64, 32);
+          const pixels = a.getImageData(0, 0, 128, 64).data;
+          return b.getImageData(0, 0, 128, 64).data.some((value, i) => value !== pixels[i]);
+        });
+      } finally { document.fonts.delete(original); }
+    })()`);
+    assert.deepEqual(mismatches, [], 'Session icons must render the original glyphs, including logout');
+  }
   await call('Page.enable'); await call('Runtime.enable');
   await call('Page.addScriptToEvaluateOnNewDocument', { source: 'Date.now = () => 1791981000000 + Math.floor(performance.now());' });
   for (const [name, width, height] of [['desktop', 1440, 900], ['phone', 390, 844], ['landscape', 844, 390], ['small-phone', 320, 568]]) {
@@ -93,7 +115,8 @@ try {
       assert.equal(await evaluate('document.querySelector("#camera-cover-toggle").disabled'), false);
       await navigate();
       await evaluate('document.querySelector("#scene canvas").focus()'); await key('Enter', 'Enter', 13); await delay(900);
-      await key('+', 'Equal', 187); await delay(900); await click('session'); await click('logout');
+      await key('+', 'Equal', 187); await delay(900); await click('session'); await delay(600);
+      await screenshot(`${prefix}-session`); await checkSessionIcons(); await click('logout');
       await wait(visible('unlock')); await screenshot(`${prefix}-welcome`);
       await click('unlock'); await delay(500); await screenshot(`${prefix}-login`);
       await evaluate(`(() => { const e = document.querySelector('[data-control="password"]'); e.value = 'invalid-credential-fixture'; e.dispatchEvent(new Event('input', { bubbles: true })); e.focus(); })()`);
@@ -108,7 +131,7 @@ try {
       await click('boot-normal'); await wait(visible('unlock'));
       await screenshot(`${prefix}-boot-login`);
       assert.deepEqual(errors, [], 'Uncaught browser errors');
-      console.log(`PASS: ${prefix}: native controls, wallpapers, lid gating, login error, power and complete boot.`);
+      console.log(`PASS: ${prefix}: session icon glyphs, native controls, wallpapers, lid gating, login error, power and complete boot.`);
     }
   }
 } finally { socket?.close(); browser.kill(); server.kill(); }

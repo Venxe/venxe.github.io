@@ -9,7 +9,7 @@ Five runs per viewport, with network cache disabled, using headless Edge/Chromiu
 | Measurement | Before | After |
 | --- | ---: | ---: |
 | Initial requested resource bytes | 16.32 MB | 2.92 MB |
-| Icon font file | 5,397,756 bytes | 38,980 bytes |
+| Icon font file | 5,397,756 bytes | 51,488 bytes |
 | Wallpaper files used by the UI | 7,568,943 bytes | 745,446 bytes |
 | Idle screen renders per second, desktop | 145 | 0 |
 | Dashboard native DOM mutations per second | 4,806 | 0 |
@@ -20,6 +20,8 @@ Five runs per viewport, with network cache disabled, using headless Edge/Chromiu
 | GPU texture count | 4 | 4 |
 
 Initial transfer fell by approximately 82%. The alternate wallpaper, avatar and dinosaur no longer load on the initial desktop. Authentication and terminal fonts load when needed. Original source assets remain bundled for reproducible preparation and license attribution, but are not requested by the optimized UI.
+
+The icon file size includes the subsequent logout fix: source literals now retain 48 supported icon names, covering arrays and shorthand properties. It adds 12,508 bytes to the 38,980-byte subset used in the original transfer/timing measurements above; those browser measurements have not been repeated for this fix. The current icon font remains approximately 99% smaller than the original.
 
 The screen render median is zero when unchanged. One desktop sample crossed a minute boundary and correctly drew once; clock, input, asset completion and timed-state changes still wake the renderer. Dashboard canvas/texture updates remain active at no more than 20 Hz without rebuilding its native controls. Full scene views retain continuous steam animation.
 
@@ -61,6 +63,8 @@ No runtime dependency, bundler, worker, LOD, adaptive resolution, shader downgra
 `npm run check` passes, including geometry/clearance/opening checks, animation reversals, display wake after hinge settling, boot deadlines, power holds, cancellation, reduced motion, view gestures, keyboard input, native desktop controls, resource budgets, paused/resumed tabs, context loss and disposal. Performance regressions check idle GPU work, input wake, clock/OSD deadlines, hover coalescing and hidden-camera pause through the public interfaces.
 
 Real-browser checks passed at 1440 × 900, 390 × 844, 844 × 390 and 320 × 568 with both motion preferences. They exercised wallpapers, native controls, lid gating, masked credential rejection, shutdown, boot selection and completed login handoff. Screenshots were captured for baseline and optimized versions and inspected. The desktop chassis comparison differed by at most two channel levels; the phone login screenshot had a mean absolute channel difference of 0.003/255. Wallpaper derivatives introduce minor resampling differences while preserving framing, colors and visible detail. Font preparation verifies every used icon's ligature and default outline against its source.
+
+The logout regression check compares the actual drawing API's four session icons pixel-for-pixel with the original font in the same browser. It failed specifically for `logout` before regeneration. The browser check also captures the open session menu before exercising logout, so missing ligatures are covered separately from working button actions.
 
 Run the optional checks with:
 

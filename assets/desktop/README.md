@@ -21,7 +21,7 @@ The two font subsets and clock instance were prepared with fontTools, using Unic
 The original files above remain the source assets. The site serves these prepared derivatives:
 
 - `GoogleSansFlex.woff2`, `Clock.woff2`, `Rubik.woff2`, `CaskaydiaCove.woff2`: WOFF2 conversions retaining the original character coverage and variable axes.
-- `MaterialSymbolsRounded.subset.woff2`: the 34 icon ligatures used by the canvas UI, including aliases such as `notifications_none`. Variable axes and used glyph outlines are retained; the preparation script checks the ligatures and outlines against the original font.
+- `MaterialSymbolsRounded.subset.woff2`: 48 supported icon names found in source literals, including names passed through arrays and shorthand properties, such as `logout`, and aliases such as `notifications_none`. This conservative selection also retains literals that match icon names outside drawing calls. The file is 51,488 bytes; variable axes and glyph outlines are retained, and the preparation script checks the ligatures and outlines against the original font.
 - `wallpaper-display.webp`: a 1200 × 675 lossless WebP derivative of `wallpaper.png` for the fixed desktop canvas.
 - `wallpaper-alt-display.webp`: a 1600 × 675 lossless WebP derivative retaining the alternate source's aspect ratio and centered cover behavior.
 

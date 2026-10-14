@@ -28,12 +28,10 @@ def ligatures(font):
 
 named_glyphs = ligatures(symbols)
 source = "\n".join(path.read_text(encoding="utf-8") for path in (ROOT / "src").glob("*.js"))
-# Include literal alternatives in ternaries and icon properties, including aliases
-# such as notifications_none whose target glyph is named notifications.
-expressions = re.findall(r"\bd\.icon\(([^,\n]+)|\bicon:\s*([^,}\n]+)", source)
-icon_source = "\n".join(left or right for left, right in expressions)
-icons = sorted(set(re.findall(r"['\"]([a-z][a-z0-9_]+)['\"]", icon_source)) & named_glyphs.keys())
-assert {"calendar_month", "wifi_off", "progress_activity", "partly_cloudy_night"} <= set(icons)
+# Match supported icon names anywhere in source literals, including arrays passed
+# through shorthand { icon } properties and aliases such as notifications_none.
+icons = sorted(set(re.findall(r"['\"]([a-z][a-z0-9_]+)['\"]", source)) & named_glyphs.keys())
+assert {"calendar_month", "wifi_off", "progress_activity", "partly_cloudy_night", "logout"} <= set(icons)
 options = subset.Options()
 options.name_IDs = ["*"]
 options.layout_features = ["*"]
