@@ -31,7 +31,7 @@ export function createSystem() {
     if (phase !== 'booting') { boot = null; return; }
     const stage = BOOT_STAGES[bootStage];
     const entry = BOOT_ENTRIES.find((entry) => entry.id === selectedEntry);
-    const lines = stage.id === 'loader' ? entry.loadingLines : stage.lines;
+    const lines = stage.id === 'loader' ? entry.loadingLines : [];
     const elapsed = Math.max(0, now - started) * stage.duration / (duration() || stage.duration);
     const count = lines.filter((line) => elapsed >= line.at).length;
     const frame = Math.floor(Math.max(0, now - started) * BOOT_ANIMATION.fps / 1000);

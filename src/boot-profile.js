@@ -1,9 +1,8 @@
 // Visual simulation profile, based on Limine 12.9.3 and CachyOS's Linux boot entries.
 // Sources: github.com/Limine-Bootloader/Limine/tree/v12.9.3
 //          wiki.cachyos.org/configuration/boot_manager_configuration/
-const line = (at, text, status = '') => Object.freeze({ at, text, status });
-const rootUuid = '895a2100-674e-4b20-94e1-5f31d7ea8801';
-const cmdline = `root=UUID=${rootUuid} rootfstype=btrfs rootflags=subvol=@ rw quiet splash loglevel=3 systemd.show_status=auto`;
+// Quiet-splash profile: rootfstype=btrfs rootflags=subvol=@ rw quiet splash loglevel=3 systemd.show_status=auto.
+const line = (at, text) => Object.freeze({ at, text });
 export const BOOT_COLORS = Object.freeze({ background: '#000000', text: '#aaaaaa',
   menuBackground: '#101728', menuText: '#c3c6dc', help: '#a1c99c', selected: '#c6cce2' });
 export const BOOT_MENU = Object.freeze({ x: 440, y: 298, rowHeight: 20, width: 300, fontSize: 18, cellWidth: 10.8 });
@@ -14,7 +13,7 @@ export const BOOT_ENTRIES = Object.freeze([
 ].map(([id, label]) => {
   const kernelPath = `boot():/vmlinuz-${label}`;
   const modulePath = `boot():/initramfs-${label}.img`;
-  return Object.freeze({ id, label, kernelPath, modulePath, cmdline,
+  return Object.freeze({ id, label,
     loadingLines: Object.freeze([
       line(0, `linux: Loading kernel \`${kernelPath}\`...`),
       line(150, `linux: Loading module \`${modulePath}\`...`),
@@ -28,4 +27,4 @@ export const BOOT_STAGES = Object.freeze([
   { id: 'plymouth-logo', duration: Math.ceil(BOOT_ANIMATION.logoFrames * 1000 / BOOT_ANIMATION.fps) },
   { id: 'plymouth-hold', duration: 300 },
   { id: 'handoff', duration: 150 },
-].map((stage) => Object.freeze({ ...stage, lines: Object.freeze(stage.lines || []) })));
+].map((stage) => Object.freeze(stage)));

@@ -18,12 +18,12 @@ export function drawing(context) {
     text(name, x, y, size, color, 400, 'center', FONTS.icons);
   }
   function image(image, box, radius = 0) {
-    if (!image?.complete || !image.naturalWidth) return false;
+    if (!image?.complete || !image.naturalWidth) return;
     context.save();
     if (radius) { context.beginPath(); context.roundRect(box.x, box.y, box.w, box.h, radius); context.clip(); }
     const ratio = Math.max(box.w / image.naturalWidth, box.h / (image.naturalHeight || image.naturalWidth));
     const w = image.naturalWidth * ratio, h = (image.naturalHeight || image.naturalWidth) * ratio;
-    context.drawImage(image, box.x + (box.w - w) / 2, box.y + (box.h - h) / 2, w, h); context.restore(); return true;
+    context.drawImage(image, box.x + (box.w - w) / 2, box.y + (box.h - h) / 2, w, h); context.restore();
   }
   function logo(x, y, size, color = T.secondary) {
     context.save(); context.translate(x, y); context.rotate(-0.27); context.strokeStyle = color;
@@ -31,10 +31,10 @@ export function drawing(context) {
     context.beginPath(); context.ellipse(0, 0, size * 0.5, size * 0.1, 0, 0, Math.PI * 2); context.stroke();
     context.restore(); text('✦', x + size * 0.33, y - size * 0.35, size * 0.23, color);
   }
-  function shape(x, y, radius, lobes = 6, morph = 0, rotation = 0) {
+  function shape(x, y, radius, lobes = 6, morph = 0) {
     context.beginPath();
     for (let i = 0; i <= 120; i++) {
-      const angle = i * Math.PI * 2 / 120 + rotation;
+      const angle = i * Math.PI * 2 / 120;
       const r = radius * (0.9 + 0.1 * (1 - morph) * Math.cos(lobes * angle));
       const px = x + Math.cos(angle) * r, py = y + Math.sin(angle) * r;
       if (!i) context.moveTo(px, py); else context.lineTo(px, py);

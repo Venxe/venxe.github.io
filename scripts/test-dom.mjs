@@ -5,7 +5,7 @@ const markup = html.slice(html.indexOf('<div id="desktop-controls"'), html.index
 const dataName = (name) => name.slice(5).replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
 
 // Browser boundaries only; the desktop module and its real HTML are unchanged.
-export class TestElement extends EventTarget {
+class TestElement extends EventTarget {
   constructor(tag) {
     super();
     this.tagName = tag.toUpperCase();
@@ -23,7 +23,7 @@ export class TestElement extends EventTarget {
     let scale = 1;
     this.context = new Proxy({}, { get: (target, key) => {
       if (key in target) return target[key];
-      if (key === 'createLinearGradient' || key === 'createRadialGradient') return () => ({ addColorStop() {} });
+      if (key === 'createRadialGradient') return () => ({ addColorStop() {} });
       if (key === 'measureText') return text => ({ width: String(text).length * 8 });
       if (key === 'setTransform') return (value) => { scale = value; };
       if (key === 'fillRect') return (x, y, w, h) => {
