@@ -68,28 +68,9 @@ export function createBootPainter(canvas) {
       return;
     }
     context.textAlign = 'left';
-    let y = 30;
-    const columns = Math.floor((canvas.width - 48) / 9.6);
-    for (const line of boot.lines) {
-      const prefix = line.status === 'ok' ? '[  OK  ] ' : '';
-      let remaining = prefix + line.text;
-      let first = true;
-      while (remaining && y < canvas.height - 20) {
-        let end = remaining.length;
-        if (end > columns) end = remaining.lastIndexOf(' ', columns);
-        if (end <= 0) end = columns;
-        const text = remaining.slice(0, end);
-        context.fillStyle = BOOT_COLORS.text;
-        if (prefix && first) {
-          context.fillStyle = BOOT_COLORS.accent;
-          context.fillText(prefix, 24, y);
-          context.fillStyle = BOOT_COLORS.text;
-          context.fillText(text.slice(prefix.length), 24 + prefix.length * 9.6, y);
-        } else context.fillText(text, 24, y);
-        remaining = remaining.slice(end).trimStart();
-        first = false;
-        y += 20;
-      }
+    context.fillStyle = BOOT_COLORS.text;
+    for (const [index, line] of boot.lines.entries()) {
+      context.fillText(line.text, 24, 30 + index * 20);
     }
   }
   return drawBoot;

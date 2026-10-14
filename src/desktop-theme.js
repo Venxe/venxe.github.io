@@ -3,7 +3,7 @@ export const THEME = Object.freeze({
   background: '#0d0e12', low: '#111318', surface: '#17191f', high: '#1d1f26', variant: '#23262d',
   text: '#e3e5f0', muted: '#9296a5', primary: '#68779b', accent: '#afc6ff', secondary: '#bfc6dc',
   tertiary: '#f0dfff', error: '#fa746f', success: '#a9cfb2', outline: '#73757f',
-  barWidth: 60, border: 10, rounding: 25, duration: 400,
+  barWidth: 60, rounding: 25, duration: 400,
 });
 export const FONTS = Object.freeze({ body: 'Google Sans Flex', clock: 'Rubik', digits: 'Caelestia Clock', mono: 'CaskaydiaCove', icons: 'Material Symbols Rounded' });
 export const NETWORKS = Object.freeze(['Venxe Studio', 'Coffee Corner']);

@@ -137,7 +137,7 @@ export function createScreen(system = createSystem()) {
     const panel = shell.state.panel;
     if (!panel) return false;
     shell.send('dismiss'); gesture = null; hover = null; refresh();
-    if (restoreFocus) focusControl(panel === 'audio' ? 'utilities' : panel);
+    if (restoreFocus) focusControl(panel);
     return true;
   }
   function revealLogin() {

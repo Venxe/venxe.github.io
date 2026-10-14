@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
-import { readFile, stat } from 'node:fs/promises';
 import { createElement, createDesktopControls, TestImage } from './test-dom.mjs';
 registerHooks({ resolve(specifier, context, nextResolve) { return nextResolve(specifier === 'three' ? new URL('../vendor/three/build/three.module.min.js', import.meta.url).href : specifier, context); } });
 globalThis.document = { hidden: false, createElement };

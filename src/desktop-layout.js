@@ -1,4 +1,4 @@
-import { THEME, NETWORKS, fullDate, timeLabel } from './desktop-theme.js';
+import { DEMO, NETWORKS, fullDate, timeLabel } from './desktop-theme.js';
 
 export const inside = (point, box) => !!(point && box && point.x >= box.x && point.x < box.x + box.w && point.y >= box.y && point.y < box.y + box.h);
 
@@ -9,7 +9,7 @@ export function desktopLayout(state, shell, today, revealed) {
   const windows = [];
   let calendar = null;
   const add = (id, label, x, y, w = 44, h = 44, extra = {}) => items.push({ id, label, x, y, w, h, type: 'button', ...extra });
-  const surface = (x, y, w, h, edge, extra = {}) => { const box = { x, y, w, h, edge, ...extra }; surfaces.push(box); return box; };
+  const surface = (x, y, w, h, edge) => surfaces.push({ x, y, w, h, edge });
   if (['login', 'locked'].includes(state.phase)) {
     if (!revealed && state.phase === 'login') add('unlock', 'Open sign in', 0, 0, 1200, 675, { invisible: true });
     else {
@@ -28,7 +28,7 @@ export function desktopLayout(state, shell, today, revealed) {
   for (const [index, window] of (fullscreen ? [fullscreen] : visible).entries()) {
     const box = fullscreen ? { x: 0, y: 0, w: 1200, h: 675 } : { x: 76 + index * (1110 / visible.length), y: 26, w: 1110 / visible.length - 12, h: 623 };
     windows.push({ ...window, ...box });
-    add(`focus-${window.id}`, `${window.app === 'terminal' ? 'Terminal' : 'Wallpapers'} window`, box.x, box.y, box.w, box.h, { invisible: true, window: true });
+    add(`focus-${window.id}`, `${window.app === 'terminal' ? 'Terminal' : 'Wallpapers'} window`, box.x, box.y, box.w, box.h, { invisible: true });
     add(`fullscreen-${window.id}`, 'Toggle fullscreen', box.x + box.w - 82, box.y, 38, 40, { icon: 'fullscreen' });
     add(`close-${window.id}`, 'Close window', box.x + box.w - 42, box.y, 38, 40, { icon: 'close' });
     if (window.app === 'wallpapers') for (let i = 0; i < 2; i++) add(`wallpaper-${i}`, ['Lunar voyage', 'Caelestia landscape'][i], box.x + 20 + i * ((box.w - 50) / 2), box.y + 100, (box.w - 60) / 2, 170, { image: true, selected: shell.wallpaper === i });
@@ -39,7 +39,7 @@ export function desktopLayout(state, shell, today, revealed) {
     if (shell.focus) add('active-window', 'Focus active window', 8, 280, 44, 44, { bar: true, icon: visible.find(w => w.id === shell.focus)?.app === 'terminal' ? 'terminal' : 'folder_open' });
     add('dashboard', `${fullDate(today)}, ${timeLabel(today)}`, 8, 410, 44, 82, { bar: true, clock: true });
     add('network', 'Network', 8, 502, 44, 44, { bar: true, icon: shell.wifi ? 'wifi' : 'wifi_off' });
-    add('battery', 'Battery · 82%', 8, 550, 44, 44, { bar: true, icon: 'battery_5_bar' });
+    add('battery', `Battery · ${DEMO.battery}%`, 8, 550, 44, 44, { bar: true, icon: 'battery_5_bar' });
     add('session', 'Session options', 8, 610, 44, 44, { bar: true, icon: 'power_settings_new' });
     add('sidebar', 'Notifications', 1146, 14, 44, 44, { edge: true, icon: shell.dnd ? 'notifications_off' : 'notifications' });
     add('utilities', 'Utilities', 1146, 616, 44, 44, { edge: true, icon: 'tune' });
@@ -69,7 +69,7 @@ export function desktopLayout(state, shell, today, revealed) {
     surface(360, top, 540, h, 'bottom');
     shell.results.forEach((app, i) => add(`app-${app.id}`, app.title, 376, top + 18 + i * 64, 508, 60, { icon: app.icon, detail: app.detail, selected: shell.choice === i, panel: true }));
     add('search', 'Search apps and actions', 376, 589, 508, 56, { type: 'search', panel: true });
-  } else if (shell.panel === 'utilities' || shell.panel === 'audio') {
+  } else if (shell.panel === 'utilities') {
     surface(832, 327, 358, 338, 'right');
     add('mute', shell.volume ? 'Mute sound' : 'Unmute sound', 850, 382, 44, 44, { icon: shell.volume ? 'volume_up' : 'volume_off', panel: true });
     add('volume', 'Volume', 906, 382, 256, 44, { type: 'range', value: shell.volume, icon: 'volume_up', panel: true });

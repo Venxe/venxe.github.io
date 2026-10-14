@@ -66,7 +66,7 @@ export function createLoginPainter(context, assets) {
       d.text('CPU', 228, 535, 10, T.muted, 400, 'center');
       d.text(`${shell.resources.memory.toFixed(1)}G`, 309, 497, 11, T.text, 500, 'center');
       d.text('RAM', 309, 535, 10, T.muted, 400, 'center');
-      d.text('82%', 390, 497, 11, T.text, 500, 'center');
+      d.text(`${DEMO.battery}%`, 390, 497, 11, T.text, 500, 'center');
       d.text('BAT', 390, 535, 10, T.muted, 400, 'center');
     }
     clock(today);

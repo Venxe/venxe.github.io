@@ -54,7 +54,7 @@ export function createScreenPainter(canvas, assets) {
       d.text(DEMO.track, 490, 144, 32, T.text, 500); d.text(DEMO.artist, 490, 181, 17, T.muted); d.text('Local visual preview · no audio playback', 490, 222, 12, T.muted);
       const position = (shell.position + (shell.playing ? (now - shell.playStarted) / 1000 : 0)) % DEMO.duration;
       d.rect({ x: 490, y: 268, w: 530, h: 5 }, T.variant, 3); d.rect({ x: 490, y: 268, w: Math.max(1, 530 * position / DEMO.duration), h: 5 }, T.secondary, 3);
-      d.text(`${Math.floor(position / 60)}:${String(Math.floor(position % 60)).padStart(2, '0')}`, 490, 289, 11, T.muted); d.text('3:24', 1020, 289, 11, T.muted, 400, 'right');
+      d.text(`${Math.floor(position / 60)}:${String(Math.floor(position % 60)).padStart(2, '0')}`, 490, 289, 11, T.muted); d.text(`${Math.floor(DEMO.duration / 60)}:${String(DEMO.duration % 60).padStart(2, '0')}`, 1020, 289, 11, T.muted, 400, 'right');
     } else if (shell.tab === 2) {
       [['CPU', `${Math.round(shell.resources.cpu)}%`, '8 logical cores', shell.resources.cpu / 100],
         ['Memory', `${shell.resources.memory.toFixed(1)} GB`, `${DEMO.totalMemory} GB total`, shell.resources.memory / DEMO.totalMemory],
@@ -65,9 +65,9 @@ export function createScreenPainter(canvas, assets) {
       });
       d.text('Simulated laptop resources', 1062, 400, 10, T.muted, 400, 'right');
     } else {
-      d.rect({ x: 194, y: 85, w: 870, h: 303 }, T.surface, 32); d.icon('clear_day', 304, 218, 102, T.tertiary); d.text('21°', 398, 198, 90, T.secondary);
+      d.rect({ x: 194, y: 85, w: 870, h: 303 }, T.surface, 32); d.icon('clear_day', 304, 218, 102, T.tertiary); d.text(`${DEMO.temperature}°`, 398, 198, 90, T.secondary);
       d.text(DEMO.weather, 403, 278, 22); d.text(`${DEMO.location} · sample forecast`, 403, 311, 13, T.muted);
-      ['Now', '15:00', '18:00', '21:00'].forEach((label, i) => { const x = 712 + i * 84; d.text(label, x, 160, 12, T.muted, 400, 'center'); d.icon(i > 1 ? 'partly_cloudy_night' : 'partly_cloudy_day', x, 219, 31); d.text(`${21 - i}°`, x, 275, 18, T.text, 500, 'center'); });
+      ['Now', '15:00', '18:00', '21:00'].forEach((label, i) => { const x = 712 + i * 84; d.text(label, x, 160, 12, T.muted, 400, 'center'); d.icon(i > 1 ? 'partly_cloudy_night' : 'partly_cloudy_day', x, 219, 31); d.text(`${DEMO.temperature - i}°`, x, 275, 18, T.text, 500, 'center'); });
     }
   }
   function drawWindow(window, { shell }) {
@@ -143,9 +143,9 @@ export function createScreenPainter(canvas, assets) {
       const progress = state.reducedMotion ? 1 : Math.min(1, (now - frame.panelAt) / T.duration);
       context.save(); context.globalAlpha = progress; layout.surfaces.forEach(box => panelSurface(box, progress));
       if (shell.panel === 'dashboard') dashboard(frame);
-      else if (['utilities', 'audio'].includes(shell.panel)) { d.text('Quick toggles', 852, 356, 19, T.text, 500); d.icon('brightness_6', 872, 458, 24); }
+      else if (shell.panel === 'utilities') { d.text('Quick toggles', 852, 356, 19, T.text, 500); d.icon('brightness_6', 872, 458, 24); }
       else if (shell.panel === 'network') d.text('Networks', 82, 414, 19, T.text, 500);
-      else if (shell.panel === 'battery') { d.text('Laptop battery', 80, 456, 18, T.text, 500); d.text('82%', 80, 505, 38, T.secondary, 500); d.text('Discharging · 4h 12m', 80, 539, 12, T.muted); }
+      else if (shell.panel === 'battery') { d.text('Laptop battery', 80, 456, 18, T.text, 500); d.text(`${DEMO.battery}%`, 80, 505, 38, T.secondary, 500); d.text('Discharging · 4h 12m', 80, 539, 12, T.muted); }
       else if (shell.panel === 'sidebar') {
         d.text('Notifications', 844, 52, 20, T.text, 500);
         if (!shell.notifications.length) { d.icon('notifications_none', 1006, 270, 64, T.outline); d.text('All caught up', 1006, 329, 18, T.secondary, 400, 'center'); }
@@ -154,7 +154,7 @@ export function createScreenPainter(canvas, assets) {
       if (shell.panel === 'launcher' && !shell.results.length) d.text('No matching apps or actions', 630, 548, 16, T.muted, 400, 'center');
       layout.items.filter(e => e.panel).forEach(e => { context.save(); if (e.disabled) context.globalAlpha *= 0.4; item(e, frame); context.restore(); }); context.restore();
     }
-    if (shell.osd && !['utilities', 'audio', 'session'].includes(shell.panel)) {
+    if (shell.osd && !['utilities', 'session'].includes(shell.panel)) {
       const value = shell.osd.type === 'volume' ? shell.volume : shell.brightness; d.rect({ x: 1120, y: 250, w: 70, h: 230 }, T.background, 24); d.icon(shell.osd.type === 'volume' ? 'volume_up' : 'brightness_6', 1155, 280, 24);
       d.rect({ x: 1144, y: 310, w: 22, h: 125 }, T.variant, 11); d.rect({ x: 1144, y: 435 - value * 1.25, w: 22, h: Math.max(1, value * 1.25) }, T.secondary, 11); d.text(String(value), 1155, 457, 12, T.text, 400, 'center');
     }

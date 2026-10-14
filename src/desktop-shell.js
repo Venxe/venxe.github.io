@@ -45,7 +45,7 @@ export function createDesktopShell(time = Date.now()) {
   function send(event, value, at = Date.now()) {
     const before = JSON.stringify(snapshot());
     if (event === 'toggle') {
-      if (!['launcher', 'dashboard', 'utilities', 'sidebar', 'session', 'network', 'battery', 'audio'].includes(value)) return;
+      if (!['launcher', 'dashboard', 'utilities', 'sidebar', 'session', 'network', 'battery'].includes(value)) return;
       panel = panel === value ? null : value;
       query = ''; choice = 0;
     } else if (event === 'dismiss') panel = null;
@@ -82,7 +82,7 @@ export function createDesktopShell(time = Date.now()) {
     else if (event === 'wallpaper' && Number.isInteger(value) && WALLPAPERS[value]) wallpaper = value;
     else if (event === 'remove-notification') notifications = notifications.filter(n => n.id !== value);
     else if (event === 'clear-notifications') { notifications = []; toast = null; }
-    else if (event === 'media') { position = playing ? (position + (at - playStarted) / 1000) % 204 : position; playing = !playing; playStarted = at; }
+    else if (event === 'media') { position = playing ? (position + (at - playStarted) / 1000) % DEMO.duration : position; playing = !playing; playStarted = at; }
     else if (event === 'month' && [-1, 1].includes(value)) { const d = new Date(month); month = new Date(d.getFullYear(), d.getMonth() + value, 1).getTime(); }
     else if (event === 'date' && Number.isFinite(value)) { const d = new Date(value); if (!Number.isNaN(d.getTime())) { selected = d.setHours(0, 0, 0, 0); month = new Date(d.getFullYear(), d.getMonth(), 1).getTime(); } }
     else if (event === 'reset') {
