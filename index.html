@@ -29,8 +29,13 @@
       <button id="camera-cover-toggle" class="camera-cover-toggle sr-only" type="button" aria-pressed="false">Camera privacy cover</button>
       <button id="laptop-lid-toggle" class="laptop-lid-toggle sr-only" type="button" aria-pressed="false">Laptop lid</button>
       <button id="laptop-power" class="laptop-power sr-only" type="button" aria-describedby="power-help">Laptop power</button>
-      <p id="power-help" class="sr-only">Click the Power key to start when off. Hold for two seconds to force power off when on. The power menu in quick settings offers Log Out, Restart and Power Off. Logging out, starting up or reopening the lid shows the clock screen. Press any key, click or tap to reveal the password field. The first key only opens the form. Then type your password and press Enter to sign in.</p>
+      <p id="power-help" class="sr-only">Click the Power key to start when off. Hold for two seconds to force power off when on or booting. The power menu in quick settings offers Log Out, Restart and Power Off. Startup shows a Limine menu and Linux messages before the clock screen. Logging out or reopening the lid shows the clock screen directly. Press any key, click or tap the clock screen to reveal the password field. The first key only opens the form. Then type your password and press Enter to start the Hyprland session.</p>
       <div id="desktop-controls" class="sr-only" role="group" aria-label="Laptop desktop" hidden>
+        <section data-boot aria-label="Limine boot menu" aria-describedby="boot-help" hidden>
+          <p id="boot-help">Use Up or Down to select normal or fallback initramfs, Home or End to select the first or last entry, and Enter, Space or Right to boot. Fallback includes additional drivers for the same kernel. The default boots after three seconds. Using a key or the mouse on the display cancels automatic boot until you confirm. Escape returns one view; Tab moves focus between native controls. Click or tap an entry to boot. Scroll over an entry to select without zooming.</p>
+          <button type="button" data-control="boot-normal" aria-pressed="false">CachyOS (linux-cachyos)</button>
+          <button type="button" data-control="boot-fallback" aria-pressed="false">CachyOS (linux-cachyos, fallback)</button>
+        </section>
         <button type="button" data-control="clock" aria-expanded="false" aria-controls="desktop-calendar">Date and time</button>
         <button type="button" data-control="settings" aria-expanded="false" aria-controls="desktop-settings">Quick settings</button>
         <button type="button" data-control="power-menu" aria-expanded="false" aria-controls="desktop-power">Power options</button>
@@ -41,6 +46,7 @@
         </section>
         <button type="button" data-control="unlock" hidden>Sign in</button>
         <section data-login aria-label="Sign in to Venxe" hidden>
+          <p data-session></p>
           <label for="desktop-password">Password</label>
           <input id="desktop-password" data-control="password" type="password" maxlength="128" autocomplete="current-password" aria-describedby="desktop-login-error" spellcheck="false">
           <p id="desktop-login-error" data-login-error></p>

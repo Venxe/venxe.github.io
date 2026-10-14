@@ -51,7 +51,7 @@ export function start(showError) {
   desktop.bindControls(desktopControls, announce, events.signal);
   function desktopInputEnabled() {
     return viewMode !== 'free' && !transition && !contextLost && !disposed && !document.hidden && !lid.closed && !lid.moving
-      && ['desktop', 'login'].includes(system.state.phase);
+      && (['desktop', 'login'].includes(system.state.phase) || system.state.boot?.stage === 'limine');
   }
   function updateDesktopControls() {
     const hidden = !desktopInputEnabled();
@@ -296,13 +296,13 @@ export function start(showError) {
     touchGesture = null;
     activeZoomGesture = null;
   }
-  function handleLoginKey(event) {
+  function handleScreenKey(event) {
     if (!desktopInputEnabled() || !desktop.handleKey(event)) return;
     event.preventDefault();
     event.stopImmediatePropagation();
   }
-  canvas.addEventListener('keydown', handleLoginKey, captureOptions);
-  desktopControls.addEventListener('keydown', handleLoginKey, captureOptions);
+  canvas.addEventListener('keydown', handleScreenKey, captureOptions);
+  desktopControls.addEventListener('keydown', handleScreenKey, captureOptions);
   document.addEventListener('keydown', (event) => {
     if (contextLost || disposed || document.hidden) return;
     if (document.activeElement?.type === 'password' && event.key !== 'Escape') return;

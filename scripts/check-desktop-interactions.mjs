@@ -145,9 +145,24 @@ export async function runDesktopInteractions() {
   let [powerX, powerY] = powerFlow.projectPoint(powerLed);
   powerFlow.pointer('pointerdown', powerX, powerY);
   powerFlow.pointer('pointerup', powerX, powerY);
-  powerFlow.tick(8);
-  assert.ok(powerFlow.screen.material.map.image.labels.some(({ text }) => text === 'Starting up…'));
-  powerFlow.tick(28);
+  powerFlow.tick(9);
+  assert.ok(powerFlow.screen.material.map.image.labels.some(({ text }) => text === 'Limine 12.9.3 (x86-64, UEFI)'));
+  assert.equal(powerControl('boot-normal').hidden, false);
+  const bootCamera = powerFlow.camera.position.clone();
+  powerFlow.key('ArrowDown');
+  powerFlow.tick();
+  assert.equal(powerControl('boot-fallback').getAttribute('aria-pressed'), 'true');
+  assert.ok(powerFlow.camera.position.distanceTo(bootCamera) < 1e-8, 'Menu arrows must not move the camera');
+  powerFlow.tick(70);
+  assert.equal(powerControl('boot-normal').hidden, false, 'Interacting with Limine must stop autoboot');
+  powerFlow.keyDown('Enter', true);
+  powerFlow.tick();
+  assert.equal(powerControl('boot-normal').hidden, false, 'Repeated Enter must not start the selected entry');
+  powerFlow.key('Enter');
+  powerFlow.tick(6);
+  assert.ok(powerFlow.screen.material.map.image.labels.some(({ text }) => text.includes('initramfs-linux-cachyos-fallback.img')));
+  assert.equal(powerControl('boot-normal').hidden, true);
+  powerFlow.tick(85);
   assert.equal(powerControl('unlock').hidden, false);
   assert.equal(powerControl('password').hidden, true);
   const [unlockX, unlockY] = powerFlow.screenPoint(0.5, 0.5);
@@ -194,7 +209,7 @@ export async function runDesktopInteractions() {
   assert.equal(powerFlow.screen.material.color.r, 0, 'Releasing must not restart after a forced shutdown');
   const hardwarePowerButton = powerFlow.elements.get('laptop-power');
   send(hardwarePowerButton, 'click', { detail: 0 });
-  powerFlow.tick(36);
+  powerFlow.tick(160);
   assert.equal(powerControl('unlock').hidden, false, 'Assistive click must start a powered-off laptop at the clock screen');
   send(hardwarePowerButton, 'keydown', { key: 'Enter' });
   powerFlow.tick(40);
@@ -251,4 +266,62 @@ export async function runDesktopInteractions() {
   cleanup.pointer('pointerdown', 720, 450);
   assert.equal(cleanup.elements.get('announcement').textContent, announcement, 'Disposed power listeners must not announce new gestures');
   console.log('PASS: power capture priority, wheel/blur/visibility/view/lid hold cancellation, key release, and listener cleanup.');
+
+  for (const [width, height] of [[1440, 900], [390, 844]]) {
+    const boot = setup(width, height);
+    boot.key('Enter');
+    const root = boot.elements.get('desktop-controls');
+    const control = (id) => root.querySelector(`[data-control="${id}"]`);
+    for (const id of ['settings', 'power-menu', 'restart']) control(id).click();
+    boot.tick(24);
+    assert.equal(control('boot-normal').hidden, false, 'Restart must expose Limine in the laptop view');
+    const beforeWheel = boot.camera.position.clone();
+    const [x, y] = boot.screenPoint(0.45, 1 - 359 / 675);
+    const wheel = send(boot.canvas, 'wheel', { clientX: x, clientY: y, deltaY: 100, timeStamp: wallTime });
+    assert.equal(wheel.defaultPrevented, true);
+    boot.tick();
+    assert.equal(control('boot-fallback').getAttribute('aria-pressed'), 'true');
+    assert.ok(boot.camera.position.distanceTo(beforeWheel) < 1e-8, 'Wheeling over Limine must select without zooming');
+    boot.key('Escape');
+    assert.equal(boot.mode, 'free', 'Escape in Limine must return to the scene');
+    boot.tick(80);
+    assert.equal(control('boot-normal').hidden, false, 'Returning to the scene must not resume a stopped countdown');
+    boot.key('Enter');
+    assert.equal(boot.mode, 'laptop');
+    assert.equal(root.hidden, false);
+    const [tapX, tapY] = boot.screenPoint(0.45, 1 - 359 / 675);
+    boot.pointer('pointerdown', tapX, tapY, 1, 'touch');
+    boot.pointer('pointerdown', tapX + 20, tapY, 2, 'touch');
+    boot.pointer('pointerup', tapX, tapY, 1, 'touch');
+    boot.pointer('pointerup', tapX + 20, tapY, 2, 'touch');
+    boot.tick();
+    assert.equal(control('boot-normal').hidden, false, 'A second touch must cancel the boot tap');
+    const [confirmX, confirmY] = boot.screenPoint(0.45, 1 - 359 / 675);
+    boot.pointer('pointerdown', confirmX, confirmY, 1, 'touch');
+    boot.pointer('pointerup', confirmX, confirmY, 1, 'touch');
+    boot.tick(6);
+    assert.equal(control('boot-normal').hidden, true);
+    assert.ok(boot.screen.material.map.image.labels.some(({ text }) => text.includes('initramfs-linux-cachyos-fallback.img')));
+    boot.tick(30);
+    assert.equal(control('unlock').hidden, false);
+    boot.close();
+  }
+  console.log('PASS: desktop/mobile Limine wheel isolation, Escape scene return, stopped timers and single/multiple-touch boot gestures.');
+
+  for (const bootElapsed of [0, 6500]) {
+    const hold = setup(1440, 900, false);
+    hold.key('Enter');
+    hold.tick(20);
+    const root = hold.elements.get('desktop-controls');
+    for (const id of ['settings', 'power-menu', 'restart']) root.querySelector(`[data-control="${id}"]`).click();
+    hold.tick(40 + bootElapsed / 50);
+    const button = hold.elements.get('laptop-power');
+    button.focus();
+    send(button, 'keydown', { key: 'Enter' });
+    hold.tick(40);
+    assert.equal(hold.workspace.getObjectByName('power-light').visible, false, 'Automatic menu/login focus must not cancel an active native power hold');
+    send(button, 'keyup', { key: 'Enter' });
+    hold.close();
+  }
+  console.log('PASS: native power holds survive automatic boot menu and login transitions.');
 }

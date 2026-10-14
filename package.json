@@ -6,7 +6,7 @@
   "description": "An interactive 3D developer portfolio prototype built with Three.js for GitHub Pages.",
   "scripts": {
     "dev": "node scripts/serve.mjs",
-    "check": "node scripts/check.mjs && node scripts/check-system.mjs && node scripts/check-models.mjs && node scripts/check-screen.mjs && node scripts/check-interactions.mjs"
+    "check": "node scripts/check.mjs && node scripts/check-system.mjs && node scripts/check-boot.mjs && node scripts/check-models.mjs && node scripts/check-screen.mjs && node scripts/check-interactions.mjs"
   },
   "engines": { "node": ">=22.15" }
 }

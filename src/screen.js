@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { DESKTOP_SIZE } from './config.js';
 import { createSystem } from './system.js';
 import { createScreenPainter } from './screen-painter.js';
+import { BOOT_ENTRIES, BOOT_STAGES, SESSION_LABEL } from './boot-profile.js';
 
 const NETWORKS = ['Venxe Studio', 'Coffee Corner'];
 const ICON_NAMES = ['audio-volume-high', 'audio-volume-medium', 'audio-volume-low', 'audio-volume-muted',
@@ -51,6 +52,7 @@ export function createScreen(system = createSystem()) {
   let lastError = '';
   let lastVerifying = false;
   let lastClosed = system.state.closed;
+  let lastBoot = null;
   let animationFrame = -1;
   let loginRevealed = false;
   let revealStarted = 0;
@@ -74,6 +76,11 @@ export function createScreen(system = createSystem()) {
     items = [];
     panelBox = null;
     const state = system.state;
+    if (state.boot?.stage === 'limine') {
+      BOOT_ENTRIES.forEach((entry, index) => item(`boot-${entry.id}`, entry.label, 320, 293 + index * 44, 560, 44,
+        { inPanel: false, selected: state.boot.selectedEntry === entry.id }));
+      return;
+    }
     if (!['desktop', 'login'].includes(state.phase)) return;
     if (state.phase === 'login') {
       if (loginRevealed) {
@@ -191,6 +198,12 @@ export function createScreen(system = createSystem()) {
   }
   function activate(id) {
     if (disposed || (!items.some((entry) => entry.id === id && !entry.disabled) && id !== 'dismiss')) return;
+    if (id.startsWith('boot-')) {
+      system.send('boot-select', id.slice(5));
+      system.send('boot-confirm');
+      update();
+      return;
+    }
     if (id === 'unlock') { revealLogin(); return; }
     if (id === 'password') { controls.get('password')?.focus({ preventScroll: true }); return; }
     if (id === 'login') { submitLogin(); return; }
@@ -253,7 +266,34 @@ export function createScreen(system = createSystem()) {
     return true;
   }
   function handleKey(event) {
-    if (disposed || document.hidden || root?.hidden || panel || system.state.phase !== 'login' || system.state.closed || loginRevealed) return false;
+    if (disposed || document.hidden || root?.hidden || system.state.closed) return false;
+    if (system.state.boot?.stage === 'limine') {
+      system.send('boot-interrupt');
+      const boot = system.state.boot;
+      if (boot?.stage !== 'limine') { update(); return true; }
+      const index = BOOT_ENTRIES.findIndex((entry) => entry.id === boot.selectedEntry);
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? BOOT_ENTRIES.length - 1
+        : event.key === 'ArrowUp' ? (index + BOOT_ENTRIES.length - 1) % BOOT_ENTRIES.length
+          : event.key === 'ArrowDown' ? (index + 1) % BOOT_ENTRIES.length : null;
+      if (next !== null && !event.altKey && !event.ctrlKey && !event.metaKey) {
+        system.send('boot-select', BOOT_ENTRIES[next].id);
+        update();
+        controls.get(`boot-${BOOT_ENTRIES[next].id}`)?.focus({ preventScroll: true });
+        return true;
+      }
+      if (['Enter', ' ', 'ArrowRight'].includes(event.key) && !event.altKey && !event.ctrlKey && !event.metaKey) {
+        if (!event.repeat) {
+          const target = event.target?.dataset?.control;
+          if (target?.startsWith('boot-')) system.send('boot-select', target.slice(5));
+          system.send('boot-confirm');
+        }
+        update();
+        return true;
+      }
+      update();
+      return !['Escape', 'Tab', '+', '=', '-'].includes(event.key) && !event.altKey && !event.ctrlKey && !event.metaKey;
+    }
+    if (panel || system.state.phase !== 'login' || loginRevealed) return false;
     if (event.target?.dataset?.control === 'power-menu') return false;
     if (!event.repeat) revealLogin();
     return true;
@@ -262,6 +302,23 @@ export function createScreen(system = createSystem()) {
     if (disposed) return false;
     const point = pointAt(uv);
     const target = hitTest(uv);
+    if (system.state.boot?.stage === 'limine' && point) {
+      if (['pointerdown', 'pointermove', 'wheel'].includes(event.type)) system.send('boot-interrupt');
+      if (event.type === 'pointermove' && !gesture && target?.startsWith('boot-')) {
+        system.send('boot-select', target.slice(5));
+        update();
+      }
+      if (event.type === 'wheel' && target?.startsWith('boot-')) {
+        if (event.deltaY) {
+          const index = BOOT_ENTRIES.findIndex((entry) => entry.id === system.state.boot?.selectedEntry);
+          const next = Math.max(0, Math.min(BOOT_ENTRIES.length - 1, index + Math.sign(event.deltaY)));
+          system.send('boot-select', BOOT_ENTRIES[next].id);
+        }
+        update();
+        return true;
+      }
+      update();
+    }
     if (event.type === 'wheel') return !!inside(point, panelBox);
     if (event.type === 'pointerdown') {
       if (!target) return false;
@@ -299,12 +356,20 @@ export function createScreen(system = createSystem()) {
     refreshControls();
   }
   function refreshControls() { layout(); syncControls(); }
+  function focusControl(id) {
+    if (!root || root.hidden || document.hidden) return;
+    const active = document.activeElement;
+    // Keep external hardware controls focused, especially during a power hold.
+    if (active && !root.contains(active) && !['CANVAS', 'BODY'].includes(active.tagName)) return;
+    controls.get(id)?.focus({ preventScroll: true });
+  }
   function syncControls() {
     if (!root) return;
     root.querySelector('[data-panel="calendar"]').hidden = panel !== 'calendar';
     root.querySelector('[data-panel="system"]').hidden = panel !== 'system';
     root.querySelector('[data-panel="power"]').hidden = panel !== 'power';
     root.querySelector('[data-login]').hidden = system.state.phase !== 'login' || !loginRevealed;
+    root.querySelector('[data-boot]').hidden = system.state.boot?.stage !== 'limine';
     for (const [id, element] of controls) {
       const entry = items.find((entry) => entry.id === id);
       element.hidden = !entry;
@@ -318,6 +383,7 @@ export function createScreen(system = createSystem()) {
         root.querySelector('[data-login-error]').textContent = system.state.error;
       }
       if (id === 'power-menu') element.setAttribute('aria-expanded', String(panel === 'power'));
+      if (id.startsWith('boot-')) element.setAttribute('aria-pressed', String(entry.selected));
       if (entry.date) {
         element.setAttribute('aria-label', fullDate(entry.date));
         element.setAttribute('aria-pressed', String(entry.selected));
@@ -333,6 +399,7 @@ export function createScreen(system = createSystem()) {
   function bindControls(element, report, signal) {
     root = element;
     announce = report;
+    root.querySelector('[data-session]').textContent = SESSION_LABEL;
     const days = root.querySelector('[data-days]');
     for (let row = 0; row < 6; row++) {
       const tr = document.createElement('tr');
@@ -420,8 +487,8 @@ export function createScreen(system = createSystem()) {
         if (password) password.value = '';
         lastPhase = state.phase;
         refreshControls();
-        if (state.phase === 'login' && root && !root.hidden) controls.get('unlock')?.focus({ preventScroll: true });
-        else if (state.phase === 'desktop' && root && !root.hidden) controls.get('settings')?.focus({ preventScroll: true });
+        if (state.phase === 'login') focusControl('unlock');
+        else if (state.phase === 'desktop') focusControl('settings');
         announce({ desktop: 'Signed in.', login: 'Screen locked.', off: 'Computer powered off. Use the power key to start up.',
           booting: 'Starting up.', 'shutting-down': state.restarting ? 'Restarting.' : 'Shutting down.',
           'signing-out': 'Signing out.', 'signing-in': 'Signing in.' }[state.phase]);
@@ -435,7 +502,19 @@ export function createScreen(system = createSystem()) {
       revealProgress = state.reducedMotion ? 1 : Math.max(revealProgress, Math.min(1, (now - revealStarted) / 480));
       dirty = true;
     }
-    if (!['desktop', 'login', 'off'].includes(state.phase) && !state.reducedMotion && Math.floor(now / 50) !== animationFrame) {
+    if (lastBoot !== state.boot) {
+      const previous = lastBoot;
+      lastBoot = state.boot;
+      dirty = true;
+      refreshControls();
+      if (state.boot && state.boot.stage !== previous?.stage) {
+        announce(BOOT_STAGES.find((stage) => stage.id === state.boot.stage).announcement);
+        if (state.boot.stage === 'limine') focusControl(`boot-${state.boot.selectedEntry}`);
+      } else if (state.boot && state.boot.selectedEntry !== previous?.selectedEntry) {
+        announce(BOOT_ENTRIES.find((entry) => entry.id === state.boot.selectedEntry).comment);
+      }
+    }
+    if (!['desktop', 'login', 'off', 'booting'].includes(state.phase) && !state.reducedMotion && Math.floor(now / 50) !== animationFrame) {
       animationFrame = Math.floor(now / 50);
       dirty = true;
     }
@@ -443,7 +522,7 @@ export function createScreen(system = createSystem()) {
       minute = Math.floor(now / 60000);
       today = new Date(now);
       clock = `${today.getDate()} ${today.toLocaleDateString('en-GB', { month: 'short' })}. ${today.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}`;
-      dirty = true;
+      if (state.phase !== 'booting') dirty = true;
     }
     if (wifi && pendingNetwork !== null && now >= connectedAt) {
       network = pendingNetwork;

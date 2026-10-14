@@ -1,3 +1,5 @@
+import { BOOT_BRANDING, BOOT_COLORS, BOOT_ENTRIES, SESSION_LABEL } from './boot-profile.js';
+
 function drawWallpaper(context, width, height) {
   const background = context.createLinearGradient(0, 0, width, height);
   background.addColorStop(0, '#111a32');
@@ -101,11 +103,70 @@ export function createScreenPainter(canvas, icons) {
       }
     }
   }
+  function drawBoot({ state, items, focused }) {
+    const boot = state.boot;
+    context.fillStyle = BOOT_COLORS.background;
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.font = '16px Consolas, "Liberation Mono", monospace';
+    if (boot.stage === 'limine') {
+      context.textAlign = 'center';
+      context.fillStyle = BOOT_COLORS.branding;
+      context.fillText(BOOT_BRANDING, canvas.width / 2, 30);
+      context.fillStyle = BOOT_COLORS.help;
+      context.fillText('ARROWS Select    ENTER Boot', canvas.width / 2, 70);
+      context.textAlign = 'left';
+      for (const entry of items) {
+        if (entry.selected) {
+          context.fillStyle = BOOT_COLORS.selected;
+          context.fillRect(entry.x + 12, entry.y + 10, (entry.label.length + 2) * 9.6, 24);
+        }
+        context.fillStyle = entry.selected ? BOOT_COLORS.background : BOOT_COLORS.text;
+        context.fillText(entry.label, entry.x + 22, entry.y + entry.h / 2);
+        if (entry.id === focused) {
+          context.strokeStyle = BOOT_COLORS.branding;
+          context.lineWidth = 1;
+          context.strokeRect(entry.x + 3, entry.y + 3, entry.w - 6, entry.h - 6);
+        }
+      }
+      context.textAlign = 'center';
+      context.fillStyle = BOOT_COLORS.branding;
+      context.fillText(BOOT_ENTRIES.find((entry) => entry.id === boot.selectedEntry).comment, canvas.width / 2, canvas.height - 60);
+      context.fillStyle = BOOT_COLORS.accent;
+      context.fillText(boot.countdownSeconds === null ? 'Automatic boot cancelled. Press ENTER to boot.'
+        : `Booting automatically in ${boot.countdownSeconds}...`, canvas.width / 2, canvas.height - 30);
+      return;
+    }
+    context.textAlign = 'left';
+    let y = 30;
+    const columns = Math.floor((canvas.width - 48) / 9.6);
+    for (const line of boot.lines) {
+      const prefix = line.status === 'ok' ? '[  OK  ] ' : '';
+      let remaining = prefix + line.text;
+      let first = true;
+      while (remaining && y < canvas.height - 20) {
+        let end = remaining.length;
+        if (end > columns) end = remaining.lastIndexOf(' ', columns);
+        if (end <= 0) end = columns;
+        const text = remaining.slice(0, end);
+        context.fillStyle = BOOT_COLORS.text;
+        if (prefix && first) {
+          context.fillStyle = BOOT_COLORS.accent;
+          context.fillText(prefix, 24, y);
+          context.fillStyle = BOOT_COLORS.text;
+          context.fillText(text.slice(prefix.length), 24 + prefix.length * 9.6, y);
+        } else context.fillText(text, 24, y);
+        remaining = remaining.slice(end).trimStart();
+        first = false;
+        y += 20;
+      }
+    }
+  }
   function draw(frame) {
     const { items, panelBox, barHeight, state, now, today, dateLabel, loginRevealed, loginAnimation } = frame;
     context.setTransform(1, 0, 0, 1, 0, 0);
     context.drawImage(wallpaper, 0, 0);
     context.textBaseline = 'middle';
+    if (state.phase === 'booting') { drawBoot(frame); return; }
     if (state.phase !== 'desktop') {
       context.fillStyle = state.phase === 'off' ? '#000000' : '#0d1329c9';
       context.fillRect(0, 0, canvas.width, canvas.height);
@@ -135,6 +196,9 @@ export function createScreenPainter(canvas, icons) {
           context.fillStyle = '#e8edf7';
           context.font = '600 25px "Segoe UI", Arial, sans-serif';
           context.fillText('venxe', 600, 362 + offset);
+          context.font = '12px "Segoe UI", Arial, sans-serif';
+          context.fillStyle = '#b8c9df';
+          context.fillText(SESSION_LABEL, 600, 391 + offset);
           context.font = '13px "Segoe UI", Arial, sans-serif';
           context.fillStyle = '#efb2b8';
           context.fillText(state.error, 600, 492 + offset, 360);
@@ -152,8 +216,8 @@ export function createScreenPainter(canvas, icons) {
         context.fillText('venxe', 600, 291);
         context.font = '15px "Segoe UI", Arial, sans-serif';
         context.fillStyle = '#b8c9df';
-        context.fillText({ booting: 'Starting up…', 'shutting-down': state.restarting ? 'Restarting…' : 'Shutting down…',
-          'signing-out': 'Signing out…', 'signing-in': 'Welcome back' }[state.phase], 600, 344);
+        context.fillText({ 'shutting-down': state.restarting ? 'Restarting…' : 'Shutting down…',
+          'signing-out': 'Signing out…', 'signing-in': 'Starting Hyprland session…' }[state.phase], 600, 344);
         if (!state.reducedMotion) {
           context.strokeStyle = '#b8c9ef';
           context.lineWidth = 2;

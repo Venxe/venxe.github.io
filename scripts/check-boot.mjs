@@ -1,0 +1,107 @@
+import assert from 'node:assert/strict';
+import { createSystem } from '../src/system.js';
+
+let now = 0;
+Date.now = () => now;
+const system = createSystem();
+system.send('shutdown');
+now = 1400;
+system.update();
+system.send('press');
+system.send('release');
+const start = now;
+const at = (ms) => { now = start + ms; system.update(); };
+assert.equal(system.state.boot.stage, 'firmware');
+for (const [ms, stage] of [[450, 'limine'], [3450, 'loader'], [4150, 'kernel'],
+  [5400, 'initramfs'], [6300, 'services'], [7800, 'handoff']]) {
+  at(ms);
+  assert.equal(system.state.phase, 'booting');
+  assert.equal(system.state.boot.stage, stage);
+}
+at(7999);
+assert.equal(system.state.phase, 'booting');
+at(8000);
+assert.equal(system.state.phase, 'login');
+assert.equal(system.state.boot, null);
+system.dispose();
+console.log('PASS: eight-second cold boot follows firmware, Limine, loader, kernel, initramfs, services and login.');
+
+function coldBoot(reducedMotion = false) {
+  const computer = createSystem();
+  computer.update(now, reducedMotion);
+  computer.send('shutdown');
+  now += reducedMotion ? 400 : 1400;
+  computer.update();
+  computer.send('press');
+  computer.send('release');
+  return computer;
+}
+const menu = coldBoot();
+now += 450;
+menu.update();
+assert.equal(menu.state.boot.countdownSeconds, 3);
+const initialMenu = menu.state.boot;
+now += 50;
+menu.update();
+assert.equal(menu.state.boot, initialMenu, 'An unchanged menu must reuse its snapshot');
+now += 950;
+menu.update();
+assert.equal(menu.state.boot.countdownSeconds, 2);
+menu.send('boot-select', 'unknown');
+assert.equal(menu.state.boot.countdownSeconds, 2, 'Invalid entries cannot interrupt autoboot');
+menu.send('boot-select', 'fallback');
+assert.equal(menu.state.boot.countdownSeconds, null);
+now += 60000;
+menu.update();
+assert.equal(menu.state.boot.stage, 'limine', 'Interrupted menus must remain waiting after a background tab');
+assert.equal(menu.state.boot.selectedEntry, 'fallback');
+assert.ok(Object.isFrozen(menu.state.boot) && Object.isFrozen(menu.state.boot.lines));
+menu.send('boot-confirm');
+now += 300;
+menu.update();
+assert.ok(menu.state.boot.lines.some(({ text }) => text.includes('initramfs-linux-cachyos-fallback.img')));
+menu.send('boot-select', 'normal');
+assert.equal(menu.state.boot.selectedEntry, 'fallback', 'Selection must be locked after leaving Limine');
+now += 10000;
+menu.update();
+assert.equal(menu.state.phase, 'login', 'Long frame gaps must finish the remaining boot stages');
+menu.send('restart');
+now += 2000;
+menu.update();
+assert.equal(menu.state.boot.stage, 'firmware');
+assert.equal(menu.state.boot.selectedEntry, 'normal', 'A fresh boot must restore the default');
+now += 8000;
+menu.update();
+assert.equal(menu.state.phase, 'login');
+menu.dispose();
+
+for (const ms of [0, 450, 3450, 4150, 5400, 6300, 7800]) {
+  const computer = coldBoot();
+  now += ms;
+  computer.update();
+  computer.send('press');
+  now += 2000;
+  computer.update();
+  assert.equal(computer.state.phase, 'off', 'Power holds must abort every boot stage');
+  assert.equal(computer.state.boot, null);
+  computer.send('release');
+  now += 10000;
+  computer.update();
+  assert.equal(computer.state.phase, 'off', 'An aborted boot must never resume');
+  computer.dispose();
+}
+const reduced = coldBoot(true);
+now += 400;
+reduced.update();
+assert.equal(reduced.state.boot.countdownSeconds, 3, 'Reduced motion must preserve the selection time');
+reduced.send('lid', true);
+reduced.send('boot-confirm');
+assert.equal(reduced.state.boot.stage, 'limine', 'Closed lids must block boot commands');
+now += 4799;
+reduced.update();
+assert.equal(reduced.state.boot.stage, 'handoff');
+now++;
+reduced.update();
+assert.equal(reduced.state.phase, 'login', 'Reduced boot must finish in 5200ms behind a closed lid');
+reduced.dispose();
+console.log('PASS: menu interruption/fallback, immutable snapshots, background catch-up, restart reset, power holds and reduced-motion closed-lid boot.');

@@ -1,6 +1,8 @@
+import { BOOT_ENTRIES, BOOT_STAGES } from './boot-profile.js';
+
 // This is a local desktop simulation, not an authentication boundary.
 const PASSWORD_DIGEST = '8cd6cb7e1601eb5dcd0a0d3d8f62c2dd8ee483819f9130a34259a217e927679f';
-const DURATIONS = { 'shutting-down': 1400, off: 600, booting: 1800, 'signing-out': 350, 'signing-in': 350 };
+const DURATIONS = { 'shutting-down': 1400, off: 600, 'signing-out': 350, 'signing-in': 350 };
 
 export function createSystem() {
   let phase = 'desktop';
@@ -14,10 +16,26 @@ export function createSystem() {
   let generation = 0;
   let hold = null;
   let disposed = false;
+  let bootStage = 0;
+  let selectedEntry = 'normal';
+  let bootInterrupted = false;
+  let boot = null;
 
   function duration() {
-    const value = DURATIONS[phase] || 0;
+    if (phase === 'booting' && BOOT_STAGES[bootStage].id === 'limine') return bootInterrupted ? 0 : BOOT_STAGES[bootStage].duration;
+    const value = phase === 'booting' ? BOOT_STAGES[bootStage].duration : DURATIONS[phase] || 0;
     return reducedMotion ? Math.min(value, 400) : value;
+  }
+  function refreshBoot() {
+    if (phase !== 'booting') { boot = null; return; }
+    const stage = BOOT_STAGES[bootStage];
+    const entry = BOOT_ENTRIES.find((entry) => entry.id === selectedEntry);
+    const lines = stage.id === 'loader' ? entry.loadingLines : stage.lines;
+    const elapsed = Math.max(0, now - started) * stage.duration / (duration() || stage.duration);
+    const count = lines.filter((line) => elapsed >= line.at).length;
+    const countdownSeconds = stage.id === 'limine' && !bootInterrupted ? Math.max(0, Math.ceil((duration() - (now - started)) / 1000)) : null;
+    if (boot?.stage === stage.id && boot.selectedEntry === selectedEntry && boot.countdownSeconds === countdownSeconds && boot.lines.length === count) return;
+    boot = Object.freeze({ stage: stage.id, selectedEntry, countdownSeconds, lines: Object.freeze(lines.slice(0, count)) });
   }
   function enter(next, at = now) {
     phase = next;
@@ -25,6 +43,8 @@ export function createSystem() {
     error = '';
     verifying = false;
     generation++;
+    if (next === 'booting') { bootStage = 0; selectedEntry = 'normal'; bootInterrupted = false; }
+    refreshBoot();
   }
   function update(time = Date.now(), reduce = reducedMotion) {
     if (disposed) return;
@@ -40,11 +60,15 @@ export function createSystem() {
       const at = started + duration();
       if (phase === 'shutting-down') enter('off', at);
       else if (phase === 'off' && restarting) enter('booting', at);
-      else if (phase === 'booting') { restarting = false; enter('login', at); }
+      else if (phase === 'booting') {
+        if (bootStage + 1 < BOOT_STAGES.length) { bootStage++; started = at; }
+        else { restarting = false; enter('login', at); }
+      }
       else if (phase === 'signing-out') enter('login', at);
       else if (phase === 'signing-in') enter(closed ? 'login' : 'desktop', at);
       else break;
     }
+    refreshBoot();
   }
   async function login(password) {
     if (phase !== 'login' || closed || verifying || typeof password !== 'string' || !password.length || password.length > 128) return;
@@ -70,7 +94,7 @@ export function createSystem() {
     else error = unavailable ? 'Sign in is unavailable. Please try again.' : 'Incorrect password. Try again.';
   }
   function send(event, value) {
-    if (disposed) return;
+    if (disposed || typeof event !== 'string') return;
     update();
     if (event === 'lid') {
       closed = !!value;
@@ -85,6 +109,13 @@ export function createSystem() {
       const shouldBoot = hold?.wasOff && phase === 'off' && !restarting && !closed;
       hold = null;
       if (shouldBoot) enter('booting');
+    } else if (event.startsWith('boot-') && phase === 'booting' && boot.stage === 'limine' && !closed) {
+      if (event === 'boot-select' && BOOT_ENTRIES.some((entry) => entry.id === value)) {
+        selectedEntry = value;
+        bootInterrupted = true;
+      } else if (event === 'boot-interrupt') bootInterrupted = true;
+      else if (event === 'boot-confirm') { bootStage++; started = now; }
+      refreshBoot();
     } else if (event === 'login') return login(value);
     else if (event === 'logout' && phase === 'desktop') enter('signing-out');
     else if (['shutdown', 'restart'].includes(event) && ['desktop', 'login'].includes(phase)) {
@@ -98,10 +129,10 @@ export function createSystem() {
     update,
     get state() {
       const progress = duration() ? Math.min(1, Math.max(0, (now - started) / duration())) : 0;
-      const brightness = phase === 'off' ? 0 : reducedMotion ? 1
+      const brightness = phase === 'off' || boot?.stage === 'firmware' ? 0 : reducedMotion ? 1
         : phase === 'shutting-down' ? Math.min(1, (1 - progress) * 5)
-          : phase === 'booting' ? Math.min(1, progress * 6) : 1;
-      return Object.freeze({ phase, error, verifying, restarting, closed, brightness, reducedMotion });
+          : 1;
+      return Object.freeze({ phase, boot, error, verifying, restarting, closed, brightness, reducedMotion });
     },
     dispose() { disposed = true; hold = null; verifying = false; generation++; },
   };
