@@ -61,10 +61,10 @@ export function createLoginPainter(context, assets) {
     fetchCard({ x: 187.5, y: 258, w: 243.75, h: 180 });
     if (locked) {
       d.rect({ x: 187.5, y: 446, w: 243.75, h: 116 }, T.surface, 28);
-      d.ring(228, 497, 22, DEMO.cpu / 100); d.ring(309, 497, 22, DEMO.memory / DEMO.totalMemory, T.tertiary); d.ring(390, 497, 22, 0.82, T.success);
-      d.text(`${DEMO.cpu}%`, 228, 497, 11, T.text, 500, 'center');
+      d.ring(228, 497, 22, shell.resources.cpu / 100); d.ring(309, 497, 22, shell.resources.memory / DEMO.totalMemory, T.tertiary); d.ring(390, 497, 22, DEMO.battery / 100, T.success);
+      d.text(`${Math.round(shell.resources.cpu)}%`, 228, 497, 11, T.text, 500, 'center');
       d.text('CPU', 228, 535, 10, T.muted, 400, 'center');
-      d.text('3.2G', 309, 497, 11, T.text, 500, 'center');
+      d.text(`${shell.resources.memory.toFixed(1)}G`, 309, 497, 11, T.text, 500, 'center');
       d.text('RAM', 309, 535, 10, T.muted, 400, 'center');
       d.text('82%', 390, 497, 11, T.text, 500, 'center');
       d.text('BAT', 390, 535, 10, T.muted, 400, 'center');

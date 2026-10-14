@@ -281,9 +281,12 @@ export function createScreen(system = createSystem()) {
     if (disposed) return;
     now = time;
     const state = system.state, beforeRevision = shell.state.revision;
-    shell.update(now); if (shell.state.revision !== beforeRevision) dirty = true;
+    const resourcesVisible = root && !root.hidden && !document.hidden && !state.closed
+      && (state.phase === 'locked' || state.phase === 'desktop' && shell.state.panel === 'dashboard' && [0, 2].includes(shell.state.tab));
+    shell.update(now, resourcesVisible && !state.reducedMotion);
+    if (shell.state.revision !== beforeRevision) dirty = true;
     if (phase !== state.phase || closed !== state.closed) {
-      if (['signing-out', 'booting', 'off'].includes(state.phase)) shell.send('reset', null, now);
+      if (['signing-out', 'booting', 'off', 'signing-in'].includes(state.phase)) shell.send('reset', null, now);
       phase = state.phase; closed = state.closed; shell.send('dismiss'); clearPassword(); gesture = null; hover = null; focused = null;
       revealed = state.phase === 'locked'; revealProgress = revealed ? 1 : 0;
       if (state.phase === 'booting') { bootExpanded = true; snapshotsExpanded = false; bootCursor = 'boot-normal'; }

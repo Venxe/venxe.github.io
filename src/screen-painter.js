@@ -48,7 +48,7 @@ export function createScreenPainter(canvas, assets) {
       ['M', 'T', 'W', 'T', 'F', 'S', 'S'].forEach((day, i) => d.text(day, 450 + (i + 0.5) * 320 / 7, 205, 10, T.muted, 500, 'center'));
       d.rect({ x: 790, y: 85, w: 274, h: 303 }, T.surface, 40); d.shape(927, 174, 64, 8, 0.3); context.fillStyle = T.primary; context.fill(); d.icon('music_note', 927, 174, 54, T.tertiary);
       d.text(DEMO.track, 927, 256, 18, T.text, 500, 'center'); d.text(DEMO.artist, 927, 280, 12, T.muted, 400, 'center');
-      d.ring(861, 343, 18, DEMO.cpu / 100); d.text(`${DEMO.cpu}% CPU`, 891, 344, 11, T.muted);
+      d.ring(861, 343, 18, shell.resources.cpu / 100); d.text(`${Math.round(shell.resources.cpu)}% CPU`, 891, 344, 11, T.muted);
     } else if (shell.tab === 1) {
       d.rect({ x: 194, y: 85, w: 260, h: 303 }, T.surface, 36); d.shape(324, 230, 88, 8, 0.35); context.fillStyle = T.primary; context.fill(); d.icon('music_note', 324, 230, 72, T.tertiary);
       d.text(DEMO.track, 490, 144, 32, T.text, 500); d.text(DEMO.artist, 490, 181, 17, T.muted); d.text('Local visual preview · no audio playback', 490, 222, 12, T.muted);
@@ -56,7 +56,10 @@ export function createScreenPainter(canvas, assets) {
       d.rect({ x: 490, y: 268, w: 530, h: 5 }, T.variant, 3); d.rect({ x: 490, y: 268, w: Math.max(1, 530 * position / DEMO.duration), h: 5 }, T.secondary, 3);
       d.text(`${Math.floor(position / 60)}:${String(Math.floor(position % 60)).padStart(2, '0')}`, 490, 289, 11, T.muted); d.text('3:24', 1020, 289, 11, T.muted, 400, 'right');
     } else if (shell.tab === 2) {
-      [['CPU', `${DEMO.cpu}%`, '8 logical cores', DEMO.cpu / 100], ['Memory', '3.2 GB', '16 GB total', 0.2], ['Storage', '86 GB', '512 GB NVMe', 0.17], ['Battery', '82%', 'Discharging · 4h 12m', 0.82]].forEach(([label, value, detail, fraction], i) => {
+      [['CPU', `${Math.round(shell.resources.cpu)}%`, '8 logical cores', shell.resources.cpu / 100],
+        ['Memory', `${shell.resources.memory.toFixed(1)} GB`, `${DEMO.totalMemory} GB total`, shell.resources.memory / DEMO.totalMemory],
+        ['Storage', `${DEMO.storage} GB`, `${DEMO.totalStorage} GB NVMe`, DEMO.storage / DEMO.totalStorage],
+        ['Battery', `${DEMO.battery}%`, 'Discharging · 4h 12m', DEMO.battery / 100]].forEach(([label, value, detail, fraction], i) => {
         const x = 194 + i * 220; d.rect({ x, y: 85, w: 210, h: 303 }, T.surface, 28); d.text(label, x + 20, 116, 17, T.secondary, 500);
         d.ring(x + 105, 211, 56, fraction, i % 2 ? T.tertiary : T.accent); d.text(value, x + 105, 211, 22, T.text, 500, 'center'); d.text(detail, x + 105, 309, 12, T.muted, 400, 'center');
       });
@@ -76,7 +79,7 @@ export function createScreenPainter(canvas, assets) {
       d.text('venxe@venxe-laptop ~', x + 24, y + 78, 15, T.accent, 500, 'left', FONTS.mono); d.text('❯ caelestiafetch', x + 24, y + 107, 14, T.text, 400, 'left', FONTS.mono);
       d.logo(x + Math.min(120, w / 4), y + 238, Math.min(130, w / 3));
       const left = x + Math.min(240, w * 0.43);
-      [['OS', DEMO.os], ['Host', DEMO.host], ['WM', DEMO.wm], ['Shell', 'Caelestia'], ['Terminal', 'foot'], ['Memory', '3.2 GiB / 16 GiB']].forEach(([key, value], i) => {
+      [['OS', DEMO.os], ['Host', DEMO.host], ['WM', DEMO.wm], ['Shell', 'Caelestia'], ['Terminal', 'foot'], ['Memory', `${shell.resources.memory.toFixed(1)} GiB / ${DEMO.totalMemory} GiB`]].forEach(([key, value], i) => {
         d.text(key, left, y + 161 + i * 27, 12, T.accent, 500, 'left', FONTS.mono); d.text(value, left + 85, y + 161 + i * 27, 12, T.text, 400, 'left', FONTS.mono, Math.max(50, w - (left - x) - 100));
       });
       d.text('Local simulation. Commands are not executed.', x + 24, y + h - 67, 11, T.muted, 400, 'left', FONTS.mono, w - 48);

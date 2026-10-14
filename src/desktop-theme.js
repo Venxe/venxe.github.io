@@ -9,11 +9,12 @@ export const FONTS = Object.freeze({ body: 'Google Sans Flex', clock: 'Rubik', d
 export const NETWORKS = Object.freeze(['Venxe Studio', 'Coffee Corner']);
 export const WALLPAPERS = Object.freeze(['wallpaper.png', 'wallpaper-alt.webp']);
 export const DEMO = Object.freeze({ host: 'venxe-laptop', os: 'CachyOS', wm: 'Hyprland', user: 'venxe',
-  weather: 'Clear skies', temperature: 21, location: 'Istanbul', cpu: 12, memory: 3.2, totalMemory: 16,
+  weather: 'Clear skies', temperature: 21, location: 'Istanbul', cpu: 4, memory: 3.2, totalMemory: 16,
   storage: 86, totalStorage: 512, battery: 82, track: 'A quiet afternoon', artist: 'Workspace session', duration: 204 });
+// Window resource costs: CPU percentage points, memory in GiB, and launch CPU peak.
 export const APPS = Object.freeze([
-  { id: 'terminal', title: 'Terminal', detail: 'System information · foot', icon: 'terminal' },
-  { id: 'wallpapers', title: 'Wallpapers', detail: 'Wallpaper collection · thunar', icon: 'folder_open' },
+  { id: 'terminal', title: 'Terminal', detail: 'System information · foot', icon: 'terminal', resources: Object.freeze({ cpu: 0.6, memory: 0.08, launchCpu: 12 }) },
+  { id: 'wallpapers', title: 'Wallpapers', detail: 'Wallpaper collection · thunar', icon: 'folder_open', resources: Object.freeze({ cpu: 1, memory: 0.16, launchCpu: 8 }) },
   { id: 'dashboard', title: 'Dashboard', detail: 'Calendar, media and performance', icon: 'dashboard' },
   { id: 'utilities', title: 'Utilities', detail: 'Network, sound and display', icon: 'tune' },
   { id: 'lock', title: 'Lock session', detail: 'Keep your workspace open', icon: 'lock' },
