@@ -40,4 +40,19 @@ At a lid opening of 20 degrees or less, the display and its glow fade out over 1
 
 Run `npm run check` to verify imports, geometry budgets, chassis/port clearance, attachment orientation, camera cover behavior, desktop controls, power/session transitions and scene interactions. Credential tests use a crypto-boundary fixture rather than the real password. These checks do not measure GPU pixels, native browser behavior, screen-reader output or FPS.
 
+The render loop sleeps when the visible scene is unchanged. Steam and finite model/camera animations use animation frames; clocks, resource meters, boot frames and other timed state changes schedule their next deadline. Native input, font/image completion and tab restoration wake the scene. Screen-only brightness changes remain independent of hinge shadow updates. The cooling grille repeats one real perforated cell with instancing, preserving its 666 open pores with much less construction work and buffer storage.
+
+Performance and real-browser checks are optional and require a local Chromium browser (Microsoft Edge is the Windows default):
+
+```sh
+npm run profile -- current
+node scripts/profile-browser.mjs current-stress --stress
+node scripts/check-browser.mjs current
+node scripts/benchmark-models.mjs
+```
+
+Set `PERF_BROWSER` to another Chromium executable when needed. Profiling uses a separate local server on port 4187 and browser checks use 4188; your development server stays on 4173. Set `PERF_SITE_ROOT` to a separate checkout to compare the same scenarios against a baseline. Each profile runs five times at desktop and phone viewport sizes, with network cache disabled, and saves JSON and screenshots under ignored `.preview/` directories. The profiler adds CPU/GPU counters only to the browser's intercepted local module response; production code contains no profiler or overlay. GPU timer queries are used when available. Sparse render intervals in sleeping modes are scheduling cadence, not low FPS. Phone viewport emulation uses the host GPU and is not a physical phone benchmark.
+
+`check-browser.mjs` runs native inputs, wallpaper changes, lid gating, login errors and complete power/boot cycles at four viewport sizes with both motion preferences, saving screenshots for inspection. It uses a deliberately incorrect credential and never saves a password. See [performance results](docs/performance.md) for measured gains and limitations. Asset preparation is documented in `assets/desktop/README.md` and is not required to run the site.
+
 `src/screen.js` coordinates the single CanvasTexture, native controls and UV input. `src/desktop-shell.js` owns local shell/workspace state, `src/desktop-layout.js` supplies shared drawing/hit geometry, and `src/desktop-theme.js` defines design tokens. `src/screen-painter.js`, `src/login-painter.js` and `src/boot-painter.js` paint their respective surfaces. Source revisions, bundled fonts and artwork licenses are listed in `assets/desktop/README.md`. `src/power-input.js` handles physical and accessible power-button gestures, while `src/system.js` owns power/session transitions. Interaction checks share `scripts/test-interactions.mjs` and run view, keyboard, hardware and desktop scenarios sequentially through `scripts/check-interactions.mjs`.

@@ -7,7 +7,7 @@ export const THEME = Object.freeze({
 });
 export const FONTS = Object.freeze({ body: 'Google Sans Flex', clock: 'Rubik', digits: 'Caelestia Clock', mono: 'CaskaydiaCove', icons: 'Material Symbols Rounded' });
 export const NETWORKS = Object.freeze(['Venxe Studio', 'Coffee Corner']);
-export const WALLPAPERS = Object.freeze(['wallpaper.png', 'wallpaper-alt.webp']);
+export const WALLPAPERS = Object.freeze(['wallpaper-display.webp', 'wallpaper-alt-display.webp']);
 export const DEMO = Object.freeze({ host: 'venxe-laptop', os: 'CachyOS', wm: 'Hyprland', user: 'venxe',
   weather: 'Clear skies', temperature: 21, location: 'Istanbul', cpu: 4, memory: 3.2, totalMemory: 16,
   storage: 86, totalStorage: 512, battery: 82, track: 'A quiet afternoon', artist: 'Workspace session', duration: 204 });

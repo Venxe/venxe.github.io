@@ -3,7 +3,9 @@ import { readFile, stat } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { resolve, sep, extname } from 'node:path';
 
-const root = fileURLToPath(new URL('../', import.meta.url));
+const root = process.argv[3] ? resolve(process.argv[3]) : fileURLToPath(new URL('../', import.meta.url));
+const port = Number(process.argv[2] || 4173);
+if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid local server port');
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.ttf': 'font/ttf', '.woff': 'font/woff', '.woff2': 'font/woff2' };
 const server = createServer(async (request, response) => {
   try {
@@ -31,4 +33,4 @@ const server = createServer(async (request, response) => {
   }
 });
 server.on('error', (error) => { console.error(error.message); process.exitCode = 1; });
-server.listen(4173, '127.0.0.1', () => console.log('Local: http://127.0.0.1:4173'));
+server.listen(port, '127.0.0.1', () => console.log(`Local: http://127.0.0.1:${port}`));

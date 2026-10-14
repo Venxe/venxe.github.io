@@ -20,6 +20,7 @@ export function start(showError) {
   const events = new AbortController();
   const listenerOptions = { signal: events.signal };
   const pointers = new Map();
+  const eventHits = new WeakMap();
   const touchPointers = new Set();
   const zoomKeys = new Map();
   const captureOptions = { ...listenerOptions, capture: true, passive: false };
@@ -46,7 +47,38 @@ export function start(showError) {
   let disposed = false;
   let touchedCamera = false;
   let desktopPointer = null;
+  let pendingHover = null;
   let lastSystemPhase = system.state.phase;
+  let animationFrame = null, wakeTimer = null, inFrame = false, suspended = false;
+  let renderRequested = true, lastScreenOnly = false, lastDisplayBrightness = lid.brightness;
+  let motionPausedAt = null;
+
+  function pauseMotion() { motionPausedAt ??= performance.now(); }
+  function resumeMotion() {
+    if (transition && motionPausedAt !== null) transition.started += performance.now() - motionPausedAt;
+    motionPausedAt = null;
+  }
+
+  function cancelFrame() {
+    if (animationFrame !== null) cancelAnimationFrame(animationFrame);
+    if (wakeTimer !== null) window.clearTimeout(wakeTimer);
+    animationFrame = wakeTimer = null;
+    previousTime = null;
+  }
+  function requestFrame(forceRender = false) {
+    if (contextLost || disposed || suspended || document.hidden) return;
+    renderRequested ||= forceRender;
+    if (wakeTimer !== null) { window.clearTimeout(wakeTimer); wakeTimer = null; }
+    if (!inFrame && animationFrame === null) animationFrame = requestAnimationFrame(frame);
+  }
+  desktop.setInvalidate(() => requestFrame(true));
+  for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'lostpointercapture', 'wheel', 'keydown']) {
+    canvas.addEventListener(type, () => requestFrame(), captureOptions);
+  }
+  for (const type of ['keydown', 'keyup']) document.addEventListener(type, () => requestFrame(), { ...listenerOptions, capture: true });
+  for (const button of [cameraCoverButton, lidButton, powerButton]) {
+    for (const type of ['click', 'pointerdown', 'pointerup', 'keydown', 'keyup']) button.addEventListener(type, () => requestFrame(true), listenerOptions);
+  }
 
   function announce(message) { announcement.textContent = message; }
   desktop.bindControls(desktopControls, announce, events.signal);
@@ -60,8 +92,12 @@ export function start(showError) {
     desktopControls.hidden = hidden;
   }
   function desktopUv(event) {
-    const hit = app.pickAt(event.clientX, event.clientY);
+    const hit = pickEvent(event);
     return hit?.kind === 'screen' ? hit.uv : null;
+  }
+  function pickEvent(event) {
+    if (!eventHits.has(event)) eventHits.set(event, app.pickAt(event.clientX, event.clientY));
+    return eventHits.get(event);
   }
   function applyPose(pose) {
     camera.position.copy(pose.position);
@@ -116,12 +152,14 @@ export function start(showError) {
       to: pose,
       fromOrbit,
       toOrbit,
-      started: elapsed,
+      started: performance.now(),
     };
+    if (motionPausedAt !== null) motionPausedAt = transition.started;
     controls.enabled = false;
     pointers.clear();
     desktopPointer = null;
     desktop.handleInput({ type: 'pointercancel' }, null);
+    pendingHover = null;
     updateDesktopControls();
     canvas.style.cursor = viewMode === 'free' ? 'grab' : 'default';
     if (reducedMotion.matches) finishTransition();
@@ -182,7 +220,7 @@ export function start(showError) {
   }
   const powerInput = bindPowerInput({
     canvas, button: powerButton, system, keyboard,
-    pickAt: app.pickAt,
+    pickAt: (x, y, event) => pickEvent(event),
     isAvailable: powerAvailable,
     hasTouchPointers: () => touchPointers.size > 0,
     announce,
@@ -237,11 +275,12 @@ export function start(showError) {
       desktop.handleInput(event, desktopUv(event));
       event.preventDefault();
       event.stopImmediatePropagation();
-    } else if (pointers.size === 0) desktop.handleInput(event, desktopUv(event));
+    } else if (pointers.size === 0) pendingHover = event;
   }, captureOptions);
   canvas.addEventListener('pointerup', (event) => {
     if (desktopPointer !== event.pointerId) return;
     desktopPointer = null;
+    pendingHover = null;
     if (desktopInputEnabled()) {
       canvas.focus({ preventScroll: true });
       desktop.handleInput(event, desktopUv(event));
@@ -255,8 +294,8 @@ export function start(showError) {
       desktop.handleInput(event, null);
     }, captureOptions);
   }
-  function actionAt(x, y) {
-    const hit = app.pickAt(x, y);
+  function actionAt(event) {
+    const hit = pickEvent(event);
     if (desktopInputEnabled() && hit?.kind === 'screen' && desktop.hitTest(hit.uv)) return 'desktop';
     if (viewMode === 'screen') return null;
     if (hit?.kind === 'lid') return 'lid';
@@ -289,6 +328,7 @@ export function start(showError) {
     powerInput.cancel();
     resetKeyboard();
     desktopPointer = null;
+    pendingHover = null;
     desktop.handleInput({ type: 'pointercancel' }, null);
     pointers.clear();
     touchPointers.clear();
@@ -296,6 +336,7 @@ export function start(showError) {
     wheelGesture = null;
     touchGesture = null;
     activeZoomGesture = null;
+    requestFrame(true);
   }
   function handleScreenKey(event) {
     if (!desktopInputEnabled() || !desktop.handleKey(event)) return;
@@ -353,10 +394,10 @@ export function start(showError) {
     controls.update();
   }, listenerOptions);
   controls.addEventListener('start', () => { touchedCamera = true; });
-  controls.addEventListener('change', checkZoom);
+  controls.addEventListener('change', () => { checkZoom(); requestFrame(true); });
   canvas.addEventListener('pointerdown', (event) => {
     if (contextLost || event.button !== 0 || desktopPointer === event.pointerId) return;
-    const action = actionAt(event.clientX, event.clientY);
+    const action = actionAt(event);
     if (transition && action !== 'lid') return;
     pointers.set(event.pointerId, {
       x: event.clientX, y: event.clientY, moved: false,
@@ -368,8 +409,7 @@ export function start(showError) {
     const pointer = pointers.get(event.pointerId);
     if (pointer && Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y) > SETTINGS.dragThreshold) pointer.moved = true;
     if (!contextLost && event.pointerType === 'mouse' && pointers.size === 0) {
-      const action = actionAt(event.clientX, event.clientY);
-      canvas.style.cursor = action && (!transition || action === 'lid') ? 'pointer' : viewMode === 'free' ? 'grab' : 'default';
+      pendingHover = event;
     }
   }, listenerOptions);
   canvas.addEventListener('pointerup', (event) => {
@@ -377,7 +417,7 @@ export function start(showError) {
     pointers.delete(event.pointerId);
     if (!pointer || pointer.moved || contextLost || (transition && pointer.action !== 'lid')) return;
     if (Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y) > SETTINGS.dragThreshold) return;
-    if (!pointer.action || pointer.action !== actionAt(event.clientX, event.clientY)) return;
+    if (!pointer.action || pointer.action !== actionAt(event)) return;
     canvas.focus({ preventScroll: true });
     if (pointer.action === 'webcam') toggleCameraCover();
     else if (pointer.action === 'lid') toggleLaptopLid();
@@ -387,10 +427,13 @@ export function start(showError) {
     canvas.addEventListener(event, (pointerEvent) => pointers.delete(pointerEvent.pointerId), listenerOptions);
   }
   canvas.addEventListener('pointerleave', () => {
+    pendingHover = null;
     canvas.style.cursor = viewMode === 'free' ? 'grab' : 'default';
   }, listenerOptions);
   function frame(time) {
-    if (contextLost || disposed || document.hidden) return;
+    animationFrame = null;
+    if (contextLost || disposed || suspended || document.hidden) return;
+    inFrame = true;
     const delta = previousTime === null ? 0 : Math.min((time - previousTime) / 1000, 0.05);
     previousTime = time;
     elapsed += delta;
@@ -401,8 +444,10 @@ export function start(showError) {
       if (system.state.phase === 'off' && !system.state.restarting && viewMode === 'screen') changeView('laptop', app.laptopPose());
     }
     powerButton.disabled = !powerAvailable();
+    const wasTransitioning = !!transition;
+    let cameraChanged = false;
     if (transition) {
-      const progress = Math.min((elapsed - transition.started) / SETTINGS.transitionSeconds, 1);
+      const progress = Math.min((time - transition.started) / (SETTINGS.transitionSeconds * 1000), 1);
       const eased = progress * progress * (3 - 2 * progress);
       controls.target.lerpVectors(transition.from.target, transition.to.target, eased);
       motionSpherical.set(
@@ -414,21 +459,47 @@ export function start(showError) {
       camera.lookAt(controls.target);
       if (progress === 1) finishTransition();
     } else {
-      controls.update(delta);
+      // The immersive screen pose is fixed; gestures leave it before orbiting.
+      if (viewMode !== 'screen') cameraChanged = controls.update(delta);
       rememberCamera();
     }
-    if (keyboard.update(delta, reducedMotion.matches)) renderer.shadowMap.needsUpdate = true;
-    if (webcam.update(delta, reducedMotion.matches)) renderer.shadowMap.needsUpdate = true;
-    if (lid.update(delta, reducedMotion.matches)) {
-      renderer.shadowMap.needsUpdate = true;
+    const keysChanged = keyboard.update(delta, reducedMotion.matches);
+    const coverChanged = webcam.update(delta, reducedMotion.matches);
+    const lidChanged = lid.update(delta, reducedMotion.matches);
+    if (keysChanged || coverChanged || lidChanged) renderer.shadowMap.needsUpdate = true;
+    if (lidChanged) {
       cameraCoverButton.disabled = lid.closed || lid.moving;
     }
-    if (!reducedMotion.matches) steam.update(elapsed);
+    const screenOnly = viewMode === 'screen' && !transition;
+    if (pendingHover) {
+      const event = pendingHover; pendingHover = null;
+      if (pointers.size === 0 && touchPointers.size < 2) {
+        if (desktopInputEnabled()) desktop.handleInput(event, desktopUv(event));
+        if (event.pointerType === 'mouse') {
+          const action = actionAt(event);
+          canvas.style.cursor = action && (!transition || action === 'lid') ? 'pointer' : viewMode === 'free' ? 'grab' : 'default';
+        }
+      }
+    }
+    const steamVisible = !reducedMotion.matches && !screenOnly;
+    if (steamVisible) steam.update(elapsed);
     scene.fog.near = controls.getDistance() + 6;
     scene.fog.far = scene.fog.near + 20;
     updateDesktopControls();
-    desktop.update();
-    app.render(viewMode === 'screen' && !transition);
+    const painted = desktop.update();
+    const displayChanged = lastDisplayBrightness !== lid.brightness;
+    lastDisplayBrightness = lid.brightness;
+    if (renderRequested || cameraChanged || wasTransitioning || painted || displayChanged || steamVisible
+      || screenOnly !== lastScreenOnly || !screenOnly && (keysChanged || coverChanged || lidChanged)) app.render(screenOnly);
+    lastScreenOnly = screenOnly;
+    renderRequested = false;
+    inFrame = false;
+    if (transition || cameraChanged || keyboard.moving || webcam.moving || lid.animating || desktop.animating || system.animating || steamVisible) requestFrame();
+    else {
+      previousTime = null;
+      const next = Math.min(system.nextUpdateAt ?? Infinity, desktop.nextUpdateAt ?? Infinity);
+      if (Number.isFinite(next)) wakeTimer = window.setTimeout(() => { wakeTimer = null; requestFrame(); }, Math.max(1, Math.ceil(next - Date.now())));
+    }
   }
   const observer = new ResizeObserver(() => {
     if (disposed || contextLost) return;
@@ -451,6 +522,7 @@ export function start(showError) {
       controls.update();
       rememberCamera();
     }
+    requestFrame(true);
   });
   observer.observe(container);
   reducedMotion.addEventListener('change', () => {
@@ -462,15 +534,18 @@ export function start(showError) {
       renderer.shadowMap.needsUpdate = true;
       cameraCoverButton.disabled = lid.closed || lid.moving;
     }
+    requestFrame(true);
   }, listenerOptions);
   updateControls();
   updateHud();
   steam.points.visible = !reducedMotion.matches;
   document.addEventListener('visibilitychange', () => {
     previousTime = null;
-    if (document.hidden) resetInput();
+    if (document.hidden) { pauseMotion(); resetInput(); }
+    else if (!suspended) resumeMotion();
     updateDesktopControls();
-    renderer.setAnimationLoop(document.hidden || contextLost ? null : frame);
+    cancelFrame();
+    if (!document.hidden) requestFrame(true);
   }, listenerOptions);
   canvas.addEventListener('webglcontextlost', (event) => {
     event.preventDefault();
@@ -480,11 +555,13 @@ export function start(showError) {
     desktop.closePanel(false);
     updateDesktopControls();
     resetInput();
-    renderer.setAnimationLoop(null);
+    cancelFrame();
     showError('Graphics rendering was interrupted. Reload the scene to continue.');
   }, listenerOptions);
   window.addEventListener('pagehide', (event) => {
-    renderer.setAnimationLoop(null);
+    suspended = true;
+    pauseMotion();
+    cancelFrame();
     resetInput();
     if (event.persisted) return;
     disposed = true;
@@ -493,10 +570,12 @@ export function start(showError) {
     app.dispose();
   }, listenerOptions);
   window.addEventListener('pageshow', () => {
+    suspended = false;
+    if (!document.hidden) resumeMotion();
     previousTime = null;
-    if (!contextLost && !disposed && !document.hidden) renderer.setAnimationLoop(frame);
+    requestFrame(true);
   }, listenerOptions);
   document.querySelector('#loading').hidden = true;
   container.setAttribute('aria-busy', 'false');
-  if (!document.hidden) renderer.setAnimationLoop(frame);
+  requestFrame(true);
 }

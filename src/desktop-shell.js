@@ -93,15 +93,16 @@ export function createDesktopShell(time = Date.now()) {
     if (JSON.stringify(snapshot()) !== before) revision++;
   }
   function update(at, animateResources = false) {
+    let controlsChanged = false;
     if (pending !== null && wifi && at >= connectedAt) {
-      network = pending; pending = null; notify('Connected', `Connected to ${NETWORKS[network]}`, at); revision++;
+      network = pending; pending = null; notify('Connected', `Connected to ${NETWORKS[network]}`, at); revision++; controlsChanged = true;
     }
     if (toast && at >= toast.until) { toast = null; revision++; }
     if (osd && at >= osd.until) { osd = null; revision++; }
     // Hidden meters do no sampling. Startup and launch bursts still age in wall time.
-    if (!animateResources) return;
-    if (at < resourcesAt) { resourcesAt = at; return; }
-    if (at - resourcesAt < 50) return;
+    if (!animateResources) return controlsChanged;
+    if (at < resourcesAt) { resourcesAt = at; return controlsChanged; }
+    if (at - resourcesAt < 50) return controlsChanged;
     const delta = (at - resourcesAt) / 1000;
     resourcesAt = at;
     const t = Math.max(0, (at - sessionStartedAt) / 1000);
@@ -122,12 +123,18 @@ export function createDesktopShell(time = Date.now()) {
       memory: Math.max(0, Math.min(DEMO.totalMemory, resources.memory + (memoryTarget - resources.memory) * (1 - Math.exp(-delta / 4)))),
     });
     revision++;
+    return controlsChanged;
   }
   function snapshot() { return { panel, tab, query, choice, workspace, focus, windows, volume, brightness, wifi, network, pending, powerSaver, dnd, wallpaper,
     notifications, toast, osd, playing, position, playStarted, resources, selected, month }; }
   return {
     send,
     update,
+    nextUpdateAt(animateResources) {
+      const next = Math.min(pending !== null && wifi ? connectedAt : Infinity, toast?.until ?? Infinity,
+        osd?.until ?? Infinity, animateResources ? resourcesAt + 50 : Infinity);
+      return Number.isFinite(next) ? next : null;
+    },
     get state() {
       return Object.freeze({
         ...snapshot(), revision,

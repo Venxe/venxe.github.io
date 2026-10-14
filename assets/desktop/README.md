@@ -15,3 +15,21 @@ All assets are served locally. No font CDN, wallpaper service, authentication se
 The UI geometry, surface hierarchy, typography and motion are adapted from [Caelestia Shell](https://github.com/caelestia-dots/shell/tree/a3a8fe59aba2c0048ab02dc817748678f96076ff) and [SDDM Locklike](https://github.com/ItsABigIgloo/caelestia-sddm/tree/dd69abbb7eb122546cbabe84e116ba03e67a4ccc/themes/locklike), both carrying GPL-3.0 license texts. The Canvas implementation is a local visual simulation, with native browser inputs and no QML/PAM/Wayland execution.
 
 The two font subsets and clock instance were prepared with fontTools, using Unicode U+0020–024F, U+2000–206F and the displayed currency/arrows/symbols. Original font license notices are retained. Font processing is an asset preparation step; running the site does not require Python or a build.
+
+## Display assets
+
+The original files above remain the source assets. The site serves these prepared derivatives:
+
+- `GoogleSansFlex.woff2`, `Clock.woff2`, `Rubik.woff2`, `CaskaydiaCove.woff2`: WOFF2 conversions retaining the original character coverage and variable axes.
+- `MaterialSymbolsRounded.subset.woff2`: the 34 icon ligatures used by the canvas UI, including aliases such as `notifications_none`. Variable axes and used glyph outlines are retained; the preparation script checks the ligatures and outlines against the original font.
+- `wallpaper-display.webp`: a 1200 × 675 lossless WebP derivative of `wallpaper.png` for the fixed desktop canvas.
+- `wallpaper-alt-display.webp`: a 1600 × 675 lossless WebP derivative retaining the alternate source's aspect ratio and centered cover behavior.
+
+All derivatives carry their source licenses listed above. Prepare them with Python 3 and `fonttools`, `brotli`, and `pillow`:
+
+```sh
+python -m pip install fonttools brotli pillow
+python scripts/prepare-desktop-assets.py
+```
+
+Font preparation preserves source timestamps for repeatable output. The script reads only the bundled source files. Originals are never overwritten. The initial desktop requests its selected wallpaper and body/icon/bar-clock fonts; optional wallpaper, avatar, dinosaur and authentication/terminal fonts load when used. Plymouth's original frame assets and lazy loading are unchanged.

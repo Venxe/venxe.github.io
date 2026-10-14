@@ -108,6 +108,8 @@ export function createLaptop() {
     hitArea,
     get closed() { return closed; },
     get moving() { return lidPivot.rotation.x !== (closed ? LID_CLOSED_ANGLE : LID_OPEN_ANGLE); },
+    get animating() { return lid.moving || screenBrightness !== (screenAwake ? 1 : 0); },
+    get brightness() { return screenBrightness * system.state.brightness; },
     setClosed(value) {
       if (closed === value) return;
       closed = value;

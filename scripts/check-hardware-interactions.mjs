@@ -92,6 +92,7 @@ export function runHardwareInteractions() {
   }
   const [lidX, lidY] = laptopLid.projectPoint(lidHit);
   laptopLid.pointer('pointermove', lidX, lidY);
+  laptopLid.tick();
   assert.equal(laptopLid.canvas.style.cursor, 'pointer', 'The notch must advertise its click action');
   const lightBeforeClose = screenLight.getWorldPosition(new THREE.Vector3());
   lidClick();
@@ -246,6 +247,7 @@ export function runHardwareInteractions() {
         assert.equal(button.getAttribute('aria-pressed'), before, 'Touch outside the circular padding must not toggle the lid');
       }
       target.pointer('pointermove', x, y + offsetY);
+      target.tick();
       assert.equal(target.canvas.style.cursor, 'pointer', 'The padded notch must advertise its click action');
       target.pointer('pointerdown', x, y + offsetY, 1, 'touch');
       target.pointer('pointerup', x, y + offsetY, 1, 'touch');

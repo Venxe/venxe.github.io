@@ -32,7 +32,7 @@ export function bindPowerInput({ canvas, button, system, keyboard, pickAt, isAva
       event.stopImmediatePropagation();
       return;
     }
-    if (event.button !== 0 || hasTouchPointers() || !isAvailable() || pickAt(event.clientX, event.clientY)?.kind !== 'power') return;
+    if (event.button !== 0 || hasTouchPointers() || !isAvailable() || pickAt(event.clientX, event.clientY, event)?.kind !== 'power') return;
     beginPowerPress('canvas', event);
     canvas.setPointerCapture(event.pointerId);
     canvas.focus({ preventScroll: true });
@@ -42,13 +42,13 @@ export function bindPowerInput({ canvas, button, system, keyboard, pickAt, isAva
   canvas.addEventListener('pointermove', (event) => {
     if (powerPress?.source !== 'canvas' || powerPress.id !== event.pointerId) return;
     if (Math.hypot(event.clientX - powerPress.x, event.clientY - powerPress.y) > SETTINGS.dragThreshold
-      || pickAt(event.clientX, event.clientY)?.kind !== 'power') cancelPowerPress();
+      || pickAt(event.clientX, event.clientY, event)?.kind !== 'power') cancelPowerPress();
     event.preventDefault();
     event.stopImmediatePropagation();
   }, captureOptions);
   canvas.addEventListener('pointerup', (event) => {
     if (powerPress?.source !== 'canvas' || powerPress.id !== event.pointerId) return;
-    if (isAvailable() && pickAt(event.clientX, event.clientY)?.kind === 'power') endPowerPress();
+    if (isAvailable() && pickAt(event.clientX, event.clientY, event)?.kind === 'power') endPowerPress();
     else cancelPowerPress();
     canvas.releasePointerCapture(event.pointerId);
     event.preventDefault();

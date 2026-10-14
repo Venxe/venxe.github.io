@@ -52,6 +52,43 @@ function box(parent, material, name, width, height, depth, x = 0, y = 0, z = 0) 
   return mesh(new THREE.BoxGeometry(width, height, depth), material, parent, name, x, y, z);
 }
 
+function removeJoiningWalls(geometry, width, depth) {
+  const position = geometry.attributes.position, normal = geometry.attributes.normal;
+  const indices = [];
+  for (let i = 0; i < position.count; i += 3) {
+    const xWall = [i, i + 1, i + 2].every(vertex => Math.abs(Math.abs(position.getX(vertex)) - width / 2) < 1e-7);
+    const yWall = [i, i + 1, i + 2].every(vertex => Math.abs(Math.abs(position.getY(vertex)) - depth / 2) < 1e-7);
+    if (Math.abs(normal.getZ(i)) < 1e-7 && (xWall || yWall)) continue;
+    indices.push(i, i + 1, i + 2);
+  }
+  geometry.clearGroups();
+  geometry.setIndex(indices);
+  return geometry;
+}
+
+function createCoolingGrille(material, deckY) {
+  const group = new THREE.Group();
+  group.name = 'cooling-grille';
+  group.position.set(0, deckY - 0.004, GRILLE.z);
+  group.rotation.x = -Math.PI / 2;
+  const columns = Math.floor((GRILLE.width - 0.03) / GRILLE.pitch);
+  const gridWidth = columns * GRILLE.pitch, gridDepth = GRILLE.rows * GRILLE.pitch;
+  const cell = rectangle(GRILLE.pitch, GRILLE.pitch, 0);
+  cell.holes.push(circle(GRILLE.diameter / 2));
+  const cells = new THREE.InstancedMesh(removeJoiningWalls(extrude(cell, 0.004), GRILLE.pitch, GRILLE.pitch), material, columns * GRILLE.rows);
+  cells.name = 'cooling-grille-pores'; cells.castShadow = true; cells.receiveShadow = true;
+  const transform = new THREE.Matrix4();
+  for (let row = 0; row < GRILLE.rows; row++) for (let column = 0; column < columns; column++) {
+    transform.makeTranslation((column - (columns - 1) / 2) * GRILLE.pitch, (row - (GRILLE.rows - 1) / 2) * GRILLE.pitch, 0);
+    cells.setMatrixAt(row * columns + column, transform);
+  }
+  group.add(cells);
+  const frame = rectangle(GRILLE.width, GRILLE.depth, 0.008);
+  frame.holes.push(rectangle(gridWidth, gridDepth, 0));
+  mesh(removeJoiningWalls(extrude(frame, 0.004), gridWidth, gridDepth), material, group, 'cooling-grille-frame');
+  return group;
+}
+
 // Leave a bottom-edge notch for the Ethernet jaw and a future full-height plug.
 function bottomPlate(width, depth, radius) {
   const left = -width / 2, right = width / 2, bottom = -depth / 2, top = depth / 2;
@@ -91,16 +128,7 @@ export function createLaptopBody(deckY, metal, dark) {
   const seam = mesh(extrude(bottomPlate(LAPTOP_SIZE.width - 0.15, LAPTOP_SIZE.depth - 0.17, BODY_CORNER_RADIUS), 0.008), dark, group, 'body-seam', 0, -deckY - 0.008);
   seam.rotation.x = -Math.PI / 2;
 
-  const grilleShape = rectangle(GRILLE.width, GRILLE.depth, 0.008);
-  const columns = Math.floor((GRILLE.width - 0.03) / GRILLE.pitch);
-  for (let row = 0; row < GRILLE.rows; row++) {
-    for (let column = 0; column < columns; column++) {
-      grilleShape.holes.push(circle(GRILLE.diameter / 2,
-        (column - (columns - 1) / 2) * GRILLE.pitch, (row - (GRILLE.rows - 1) / 2) * GRILLE.pitch));
-    }
-  }
-  const grille = mesh(extrude(grilleShape, 0.004), metal, group, 'cooling-grille', 0, deckY - 0.004, GRILLE.z);
-  grille.rotation.x = -Math.PI / 2;
+  group.add(createCoolingGrille(metal, deckY));
   box(group, plastic, 'grille-channel', GRILLE.width, 0.006, GRILLE.depth, 0, deckY - 0.028, GRILLE.z);
 
   for (const side of [-1, 1]) {
@@ -264,6 +292,7 @@ export function createWebcam(dark) {
   return {
     group, hitArea,
     get closed() { return closed; },
+    get moving() { return cover.position.x !== (closed ? 0 : -0.035); },
     setClosed(value) {
       if (closed === value) return;
       closed = value;

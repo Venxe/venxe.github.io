@@ -7,6 +7,8 @@ import { createScreenPainter } from './screen-painter.js';
 import { THEME, WALLPAPERS, FONTS, fullDate, isTextInput } from './desktop-theme.js';
 import { BOOT_ENTRIES, BOOT_MENU, BOOT_ANIMATION } from './boot-profile.js';
 
+const ANIMATION_INTERVAL_MS = 33;
+
 export function createScreen(system = createSystem()) {
   const canvas = document.createElement('canvas');
   Object.assign(canvas, DESKTOP_SIZE);
@@ -17,23 +19,43 @@ export function createScreen(system = createSystem()) {
   const paint = createScreenPainter(canvas, assets);
   const bootLogo = [], bootThrobber = [];
   let bootAnimationsRequested = false, disposed = false, dirty = true;
+  let invalidate = () => {};
+  const requestedFonts = new Set();
   let root = null, announce = () => {}, layout = { items: [], surfaces: [] };
   let now = Date.now(), lastMinute = -1, lastAnimation = -1, inputAt = 0, errorAt = 0;
   let phase = system.state.phase, closed = system.state.closed, lastBoot = null, lastError = '', lastVerifying = false;
   let revealed = false, revealAt = 0, revealProgress = 0, panelAt = 0, lastPanel = null;
   let gesture = null, hover = null, focused = null, hoverPanel = null;
+  let wasAnimating = false;
   let bootExpanded = true, snapshotsExpanded = false, bootCursor = 'boot-normal';
+
+  function markDirty() { if (!disposed) { dirty = true; invalidate(); } }
 
   function loadImage(path, boot = false) {
     const image = new Image();
-    for (const type of ['load', 'error']) image.addEventListener(type, () => { if (!boot || system.state.phase === 'booting') dirty = true; }, { signal: events.signal });
+    for (const type of ['load', 'error']) image.addEventListener(type, () => { if (!boot || system.state.phase === 'booting') markDirty(); }, { signal: events.signal });
     image.src = new URL(path, import.meta.url).href; return image;
   }
-  for (const name of [...WALLPAPERS, 'avatar.jpg', 'dino.png']) assets.set(name, loadImage(`../assets/desktop/${name}`));
-  if (document.fonts) {
-    Promise.allSettled(Object.values(FONTS).map(font => document.fonts.load(`16px "${font}"`))).then(() => { if (!disposed) dirty = true; });
-    document.fonts.addEventListener('loadingdone', () => { dirty = true; }, { signal: events.signal });
+  function requestFont(font) {
+    if (!document.fonts || requestedFonts.has(font)) return;
+    requestedFonts.add(font);
+    Promise.allSettled([document.fonts.load(`16px "${font}"`)]).then(markDirty);
   }
+  function ensureAssets(state, shellState) {
+    const request = name => { if (!assets.has(name)) assets.set(name, loadImage(`../assets/desktop/${name}`)); };
+    request(WALLPAPERS[shellState.wallpaper]);
+    for (const font of [FONTS.body, FONTS.clock, FONTS.icons]) requestFont(font);
+    const login = ['login', 'locked'].includes(state.phase);
+    if (login) requestFont(FONTS.digits);
+    if (shellState.panel === 'dashboard' || login && (revealed || state.phase === 'locked')) request('avatar.jpg');
+    if (login && (revealed || state.phase === 'locked')) { request('dino.png'); requestFont(FONTS.mono); }
+    for (const window of shellState.windows) {
+      if (window.workspace !== shellState.workspace || state.phase !== 'desktop') continue;
+      if (window.app === 'wallpapers') WALLPAPERS.forEach(request);
+      if (window.app === 'terminal') requestFont(FONTS.mono);
+    }
+  }
+  document.fonts?.addEventListener('loadingdone', markDirty, { signal: events.signal });
   function bootArtwork(state) {
     if (state.phase !== 'booting') return null;
     const final = BOOT_ANIMATION.logoFrames - 1;
@@ -82,12 +104,13 @@ export function createScreen(system = createSystem()) {
       element.setAttribute('aria-describedby', 'desktop-login-error'); element.spellcheck = false;
     } else if (entry.type === 'search') { element.setAttribute('maxlength', '80'); element.setAttribute('autocomplete', 'off'); element.spellcheck = false; }
     else if (entry.type === 'range') { element.min = entry.min ?? 0; element.max = 100; element.step = 1; }
-    element.addEventListener('focus', () => { focused = entry.id; dirty = true; }, options);
-    element.addEventListener('blur', () => { if (focused === entry.id) focused = null; dirty = true; }, options);
+    element.addEventListener('focus', () => { focused = entry.id; markDirty(); }, options);
+    element.addEventListener('blur', () => { if (focused === entry.id) focused = null; markDirty(); }, options);
     element.addEventListener(input ? 'input' : 'click', () => {
       if (!enabled()) return;
+      now = Math.max(now, Date.now());
       inputAt = now;
-      if (entry.type === 'password') dirty = true;
+      if (entry.type === 'password') markDirty();
       else if (entry.type === 'search') { shell.send('search', element.value, now); refresh(); }
       else if (entry.type === 'range') { changeRange(entry.id, Number(element.value)); refresh(); }
       else activate(entry.id);
@@ -104,12 +127,17 @@ export function createScreen(system = createSystem()) {
     root.querySelector('[data-native]').append(element); controls.set(entry.id, element); return element;
   }
   function enabled() { return !disposed && root && !root.hidden && !document.hidden && !system.state.closed; }
+  function setAttribute(element, name, value) {
+    if (element.getAttribute(name) !== String(value)) element.setAttribute(name, String(value));
+  }
+  function setProperty(element, name, value) { if (element[name] !== value) element[name] = value; }
   function syncControls() {
     if (!root) return;
-    root.setAttribute('aria-label', system.state.phase === 'login' ? 'SDDM Locklike sign in' : system.state.phase === 'locked' ? 'Caelestia session lock' : 'Caelestia desktop');
+    const state = system.state, shellState = shell.state;
+    setAttribute(root, 'aria-label', state.phase === 'login' ? 'SDDM Locklike sign in' : state.phase === 'locked' ? 'Caelestia session lock' : 'Caelestia desktop');
     const ids = new Set(layout.items.filter(e => e.type !== 'text').map(e => e.id));
     for (const [id, element] of controls) {
-      element.hidden = !ids.has(id);
+      setProperty(element, 'hidden', !ids.has(id));
       if (element.hidden && /^(focus|close|fullscreen|notification)-/.test(id)) {
         if (document.activeElement === element) focusControl('launcher');
         controlEvents.get(id).abort(); controlEvents.delete(id); element.remove(); controls.delete(id);
@@ -118,20 +146,20 @@ export function createScreen(system = createSystem()) {
     for (const entry of layout.items) {
       if (entry.type === 'text') continue;
       const element = controls.get(entry.id) || createControl(entry);
-      element.hidden = false; element.disabled = !!entry.disabled;
-      element.setAttribute('aria-label', entry.dateLabel || entry.label);
-      if (entry.type === 'range') { element.value = String(entry.value); element.setAttribute('aria-valuetext', `${entry.value}%`); }
-      else if (entry.type === 'search') { if (element.value !== shell.state.query) element.value = shell.state.query; }
-      else if (entry.type !== 'password') element.textContent = entry.label;
-      if (entry.selected !== undefined) element.setAttribute('aria-pressed', String(entry.selected));
-      if (entry.date !== undefined) { element.setAttribute('aria-current', entry.today ? 'date' : 'false'); element.tabIndex = entry.selected ? 0 : -1; }
-      if (entry.expanded !== undefined) element.setAttribute('aria-expanded', String(entry.expanded));
-      if (['launcher', 'dashboard', 'utilities', 'network', 'battery', 'session', 'sidebar'].includes(entry.id)) element.setAttribute('aria-expanded', String(shell.state.panel === entry.id));
-      if (entry.type === 'password') element.setAttribute('aria-invalid', String(!!system.state.error));
+      setProperty(element, 'hidden', false); setProperty(element, 'disabled', !!entry.disabled);
+      setAttribute(element, 'aria-label', entry.dateLabel || entry.label);
+      if (entry.type === 'range') { setProperty(element, 'value', String(entry.value)); setAttribute(element, 'aria-valuetext', `${entry.value}%`); }
+      else if (entry.type === 'search') setProperty(element, 'value', shellState.query);
+      else if (entry.type !== 'password') setProperty(element, 'textContent', entry.label);
+      if (entry.selected !== undefined) setAttribute(element, 'aria-pressed', entry.selected);
+      if (entry.date !== undefined) { setAttribute(element, 'aria-current', entry.today ? 'date' : 'false'); setProperty(element, 'tabIndex', entry.selected ? 0 : -1); }
+      if (entry.expanded !== undefined) setAttribute(element, 'aria-expanded', entry.expanded);
+      if (['launcher', 'dashboard', 'utilities', 'network', 'battery', 'session', 'sidebar'].includes(entry.id)) setAttribute(element, 'aria-expanded', shellState.panel === entry.id);
+      if (entry.type === 'password') setAttribute(element, 'aria-invalid', !!state.error);
     }
-    root.querySelector('[data-login-error]').textContent = system.state.error;
+    setProperty(root.querySelector('[data-login-error]'), 'textContent', state.error);
   }
-  function refresh() { dirty = true; arrange(); syncControls(); }
+  function refresh() { markDirty(); arrange(); syncControls(); }
   function clearPassword() { const input = controls.get('password'); if (input) input.value = ''; }
   function closePanel(restoreFocus = true) {
     const panel = shell.state.panel;
@@ -152,6 +180,7 @@ export function createScreen(system = createSystem()) {
     if (!disposed) { update(); focusControl('password'); }
   }
   function activate(id) {
+    now = Math.max(now, Date.now());
     hoverPanel = null;
     const entry = layout.items.find(item => item.id === id && !item.disabled);
     if (!entry && id !== 'dismiss') return;
@@ -203,6 +232,7 @@ export function createScreen(system = createSystem()) {
     return inPanel ? 'panel' : shell.state.panel && point ? 'dismiss' : null;
   }
   function handleKey(event) {
+    now = Math.max(now, Date.now());
     if (!enabled() || event.isComposing) return false;
     if (event.key === 'Escape') {
       if (closePanel()) return true;
@@ -233,6 +263,7 @@ export function createScreen(system = createSystem()) {
   }
   function handleInput(event, uv) {
     if (disposed) return false;
+    now = Math.max(now, Date.now());
     const point = pointAt(uv), target = hitTest(uv);
     if (system.state.boot?.stage === 'limine' && point && ['pointerdown', 'pointermove', 'wheel'].includes(event.type)) {
       system.send('boot-interrupt');
@@ -259,7 +290,7 @@ export function createScreen(system = createSystem()) {
     }
     if (event.type === 'pointermove') {
       if (gesture) { if (point && Math.hypot(point.x - gesture.x, point.y - gesture.y) > 6) gesture.moved = true; if (point && ['volume', 'brightness'].includes(gesture.id)) slide(gesture.id, point); return true; }
-      if (hover !== target) { hover = target; dirty = true; }
+      if (hover !== target) { hover = target; markDirty(); }
       if (event.pointerType !== 'touch' && system.state.phase === 'desktop') {
         if (['network', 'battery'].includes(target) && !shell.state.panel) { hoverPanel = target; shell.send('toggle', target, now); refresh(); }
         else if (hoverPanel && target !== hoverPanel && !layout.surfaces.some(box => inside(point, box))) { shell.send('dismiss'); hoverPanel = null; refresh(); }
@@ -273,47 +304,81 @@ export function createScreen(system = createSystem()) {
       else if (!previous.moved && target === previous.id) activate(target);
       return true;
     }
-    if (['pointercancel', 'lostpointercapture', 'pointerleave'].includes(event.type)) { gesture = null; if (hover !== null) { hover = null; dirty = true; } }
+    if (['pointercancel', 'lostpointercapture', 'pointerleave'].includes(event.type)) { gesture = null; if (hover !== null) { hover = null; markDirty(); } }
     return false;
   }
   function slide(id, point) { const entry = layout.items.find(item => item.id === id); if (entry) { changeRange(id, (point.x - entry.x) / entry.w * 100); refresh(); } }
   function update(time = Date.now()) {
-    if (disposed) return;
+    if (disposed) return false;
     now = time;
-    const state = system.state, beforeRevision = shell.state.revision;
-    const resourcesVisible = root && !root.hidden && !document.hidden && !state.closed
-      && (state.phase === 'locked' || state.phase === 'desktop' && shell.state.panel === 'dashboard' && [0, 2].includes(shell.state.tab));
-    shell.update(now, resourcesVisible && !state.reducedMotion);
-    if (shell.state.revision !== beforeRevision) dirty = true;
+    const state = system.state;
+    let shellState = shell.state;
+    const beforeRevision = shellState.revision;
+    const controlsChanged = shell.update(now, resourcesVisible(state, shellState));
+    shellState = shell.state;
+    if (controlsChanged) refresh();
+    else if (shellState.revision !== beforeRevision) dirty = true;
     if (phase !== state.phase || closed !== state.closed) {
       if (['signing-out', 'booting', 'off', 'signing-in'].includes(state.phase)) shell.send('reset', null, now);
       phase = state.phase; closed = state.closed; shell.send('dismiss'); clearPassword(); gesture = null; hover = null; focused = null;
       revealed = state.phase === 'locked'; revealProgress = revealed ? 1 : 0;
+      shellState = shell.state;
       if (state.phase === 'booting') { bootExpanded = true; snapshotsExpanded = false; bootCursor = 'boot-normal'; }
       refresh(); focusControl(state.phase === 'locked' ? 'password' : state.phase === 'login' ? 'unlock' : 'launcher');
       announce({ locked: 'Session locked.', login: 'SDDM sign in.', desktop: 'Hyprland workspace ready.', off: 'Computer powered off. Use the power key to start.', booting: 'Starting CachyOS.' }[phase] || phase.replaceAll('-', ' '));
     }
-    if (lastBoot !== state.boot) { lastBoot = state.boot; refresh(); if (state.boot?.stage === 'limine') focusControl(bootCursor); }
+    if (lastBoot !== state.boot) {
+      const frameOnly = lastBoot && state.boot && lastBoot.stage === state.boot.stage && lastBoot.selectedEntry === state.boot.selectedEntry
+        && lastBoot.countdownSeconds === state.boot.countdownSeconds && lastBoot.lines.length === state.boot.lines.length;
+      lastBoot = state.boot;
+      if (frameOnly) dirty = true;
+      else { refresh(); if (state.boot?.stage === 'limine') focusControl(bootCursor); }
+    }
     if (lastError !== state.error || lastVerifying !== state.verifying) { if (lastError !== state.error) errorAt = now; lastError = state.error; lastVerifying = state.verifying; refresh(); if (state.error) announce(state.error); }
-    if (lastPanel !== shell.state.panel) { lastPanel = shell.state.panel; panelAt = now; dirty = true; }
-    if (Math.floor(now / 60000) !== lastMinute) { lastMinute = Math.floor(now / 60000); if (phase !== 'booting') dirty = true; }
+    if (lastPanel !== shellState.panel) { lastPanel = shellState.panel; panelAt = now; dirty = true; }
+    if (Math.floor(now / 60000) !== lastMinute) { lastMinute = Math.floor(now / 60000); if (phase !== 'booting') refresh(); }
     if (revealed && revealProgress < 1) { revealProgress = state.reducedMotion ? 1 : Math.min(1, (now - revealAt) / 400); dirty = true; }
     const authAnimating = ['login', 'locked'].includes(phase) && (state.verifying || state.error && now - errorAt < 400 || now - inputAt < 500);
-    const animating = !state.reducedMotion && (shell.state.panel && now - panelAt < THEME.duration || authAnimating || !['desktop', 'login', 'locked', 'off', 'booting'].includes(phase));
-    const mediaAnimating = shell.state.playing && shell.state.panel === 'dashboard' && shell.state.tab === 1;
-    if ((animating || mediaAnimating) && Math.floor(now / (mediaAnimating ? 1000 : 33)) !== lastAnimation) { lastAnimation = Math.floor(now / (mediaAnimating ? 1000 : 33)); dirty = true; }
-    if (!dirty) return;
-    arrange(); syncControls();
-    paint({ layout, state, shell: shell.state, today: new Date(now), now, focused, hover, revealed, revealProgress, panelAt, inputAt, errorAt,
+    const animating = !state.reducedMotion && (shellState.panel && now - panelAt < THEME.duration || authAnimating || !['desktop', 'login', 'locked', 'off', 'booting'].includes(phase));
+    const mediaAnimating = shellState.playing && shellState.panel === 'dashboard' && shellState.tab === 1;
+    if (wasAnimating && !animating) dirty = true;
+    wasAnimating = !!animating;
+    if ((animating || mediaAnimating) && Math.floor(now / (mediaAnimating ? 1000 : ANIMATION_INTERVAL_MS)) !== lastAnimation) { lastAnimation = Math.floor(now / (mediaAnimating ? 1000 : ANIMATION_INTERVAL_MS)); dirty = true; }
+    ensureAssets(state, shellState);
+    if (!dirty) return false;
+    paint({ layout, state, shell: shellState, today: new Date(now), now, focused, hover, revealed, revealProgress, panelAt, inputAt, errorAt,
       passwordLength: controls.get('password')?.value?.length || 0, bootArtwork: bootArtwork(state) });
     texture.needsUpdate = true; dirty = false;
+    return true;
+  }
+  function resourcesVisible(state, shellState) {
+    return !!(root && !root.hidden && !document.hidden && !state.closed && !state.reducedMotion
+      && (state.phase === 'locked' || state.phase === 'desktop' && shellState.panel === 'dashboard' && [0, 2].includes(shellState.tab)));
+  }
+  function nextUpdateAt() {
+    if (disposed) return null;
+    const state = system.state, shellState = shell.state;
+    let next = ['desktop', 'login', 'locked'].includes(state.phase) ? (Math.floor(now / 60000) + 1) * 60000 : Infinity;
+    next = Math.min(next, shell.nextUpdateAt(resourcesVisible(state, shellState)) ?? Infinity);
+    const authAnimating = ['login', 'locked'].includes(state.phase)
+      && (state.verifying || state.error && now - errorAt < 400 || now - inputAt < 500);
+    if (!state.reducedMotion && (shellState.panel && now - panelAt < THEME.duration || authAnimating)) {
+      next = Math.min(next, (Math.floor(now / ANIMATION_INTERVAL_MS) + 1) * ANIMATION_INTERVAL_MS);
+      if (shellState.panel && now - panelAt < THEME.duration) next = Math.min(next, panelAt + THEME.duration);
+    }
+    if (shellState.playing && shellState.panel === 'dashboard' && shellState.tab === 1) next = Math.min(next, (Math.floor(now / 1000) + 1) * 1000);
+    return Number.isFinite(next) ? next : null;
   }
   function bindControls(element, report, signal) {
     root = element; announce = report; signal?.addEventListener('abort', () => { for (const lifetime of controlEvents.values()) lifetime.abort(); }, { once: true }); refresh();
   }
   function dispose() {
-    disposed = true; events.abort(); clearPassword(); for (const lifetime of controlEvents.values()) lifetime.abort(); controlEvents.clear(); controls.clear(); assets.clear(); bootLogo.length = 0; bootThrobber.length = 0; gesture = null; root = null;
+    disposed = true; invalidate = () => {}; events.abort(); clearPassword(); for (const lifetime of controlEvents.values()) lifetime.abort(); controlEvents.clear(); controls.clear(); assets.clear(); bootLogo.length = 0; bootThrobber.length = 0; gesture = null; root = null;
   }
   update(now);
-  return { texture, update, hitTest, handleInput, handleKey, closePanel, bindControls, dispose };
+  return { texture, update, hitTest, handleInput, handleKey, closePanel, bindControls, dispose,
+    setInvalidate(callback) { invalidate = callback; if (dirty) invalidate(); },
+    get animating() { return !disposed && !system.state.reducedMotion && revealed && revealProgress < 1; },
+    get nextUpdateAt() { return nextUpdateAt(); },
+  };
 }

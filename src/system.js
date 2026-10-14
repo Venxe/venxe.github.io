@@ -3,6 +3,8 @@ import { BOOT_ENTRIES, BOOT_STAGES, BOOT_ANIMATION } from './boot-profile.js';
 // This is a local desktop simulation, not an authentication boundary.
 const PASSWORD_DIGEST = '8cd6cb7e1601eb5dcd0a0d3d8f62c2dd8ee483819f9130a34259a217e927679f';
 const DURATIONS = { 'shutting-down': 1400, off: 600, 'signing-out': 350, 'signing-in': 350, unlocking: 350 };
+const POWER_HOLD_MS = 2000;
+const SHUTDOWN_FADE_FACTOR = 5;
 
 export function createSystem() {
   let phase = 'desktop';
@@ -56,7 +58,7 @@ export function createSystem() {
     if (disposed) return;
     now = time;
     reducedMotion = reduce;
-    if (hold && !hold.wasOff && now - hold.started >= 2000) {
+    if (hold && !hold.wasOff && now - hold.started >= POWER_HOLD_MS) {
       hold = null;
       restarting = false;
       enter('off');
@@ -138,10 +140,34 @@ export function createSystem() {
   return {
     send,
     update,
+    get animating() { return !disposed && !reducedMotion && phase === 'shutting-down' && now >= started + duration() * (1 - 1 / SHUTDOWN_FADE_FACTOR); },
+    get nextUpdateAt() {
+      if (disposed) return null;
+      let next = hold && !hold.wasOff ? hold.started + POWER_HOLD_MS : Infinity;
+      const span = duration();
+      if (span && (phase !== 'off' || restarting)) next = Math.min(next, started + span);
+      const fadeAt = started + span * (1 - 1 / SHUTDOWN_FADE_FACTOR);
+      if (phase === 'shutting-down' && !reducedMotion && now < fadeAt) next = Math.min(next, fadeAt);
+      if (phase === 'booting') {
+        const stage = BOOT_STAGES[bootStage];
+        if (stage.id === 'limine' && !bootInterrupted) next = Math.min(next, started + (Math.floor((now - started) / 1000) + 1) * 1000);
+        if (stage.id === 'loader') {
+          const entry = BOOT_ENTRIES.find(entry => entry.id === selectedEntry);
+          for (const line of entry.loadingLines) {
+            const at = started + line.at * span / stage.duration;
+            if (at > now) next = Math.min(next, at);
+          }
+        }
+        if (!reducedMotion && (stage.id === 'plymouth-throbber' || stage.id === 'plymouth-logo' && boot.frameIndex < BOOT_ANIMATION.logoFrames - 1)) {
+          next = Math.min(next, started + Math.ceil((Math.floor((now - started) * BOOT_ANIMATION.fps / 1000) + 1) * 1000 / BOOT_ANIMATION.fps));
+        }
+      }
+      return Number.isFinite(next) ? next : null;
+    },
     get state() {
       const progress = duration() ? Math.min(1, Math.max(0, (now - started) / duration())) : 0;
       const brightness = phase === 'off' || boot?.stage === 'firmware' ? 0 : reducedMotion ? 1
-        : phase === 'shutting-down' ? Math.min(1, (1 - progress) * 5)
+        : phase === 'shutting-down' ? Math.min(1, (1 - progress) * SHUTDOWN_FADE_FACTOR)
           : 1;
       return Object.freeze({ phase, boot, error, verifying, restarting, closed, brightness: brightness * displayBrightness, reducedMotion });
     },

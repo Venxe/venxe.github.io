@@ -73,6 +73,11 @@ class CanvasTarget extends EventTarget {
 
 export function setup(width, height, reduceMotion = true) {
   wallTime = clockStart;
+  let time = 0, nextCallback = 0, legacyLoop = null;
+  const frames = new Map(), timers = new Map();
+  globalThis.requestAnimationFrame = callback => { const id = ++nextCallback; frames.set(id, callback); return id; };
+  globalThis.cancelAnimationFrame = id => frames.delete(id);
+  globalThis.performance = { now: () => time };
   const document = Object.assign(new EventTarget(), { hidden: false, createElement });
   const canvas = Object.assign(new CanvasTarget(), {
     tagName: 'CANVAS',
@@ -92,7 +97,10 @@ export function setup(width, height, reduceMotion = true) {
   elements.set('desktop-controls', createDesktopControls());
   document.querySelector = (selector) => elements.get(selector.slice(1)) || null;
   globalThis.document = document;
-  globalThis.window = Object.assign(new EventTarget(), { devicePixelRatio: 3 });
+  globalThis.window = Object.assign(new EventTarget(), { devicePixelRatio: 3,
+    setTimeout(callback, delay) { const id = ++nextCallback; timers.set(id, { callback, at: wallTime + delay }); return id; },
+    clearTimeout(id) { timers.delete(id); },
+  });
   const window = globalThis.window;
   const preference = Object.assign(new EventTarget(), { matches: reduceMotion });
   globalThis.matchMedia = () => preference;
@@ -104,11 +112,13 @@ export function setup(width, height, reduceMotion = true) {
     disconnect() {}
   };
   const renderer = {
-    domElement: canvas, shadowMap: {}, loop: null,
+    domElement: canvas, shadowMap: {}, renderCalls: 0,
+    get loop() { return legacyLoop || frames.values().next().value || null; },
     setPixelRatio(ratio) { this.pixelRatio = ratio; }, setSize() {}, dispose() { this.disposed = true; },
     getContext: () => ({ ALIASED_POINT_SIZE_RANGE: 0, getParameter: () => [1, 128] }),
-    setAnimationLoop(loop) { this.loop = loop; },
+    setAnimationLoop(loop) { legacyLoop = loop; },
     render(scene, camera) {
+      this.renderCalls++;
       scene.updateMatrixWorld(true);
       camera.updateMatrixWorld();
       this.scene = scene;
@@ -118,8 +128,12 @@ export function setup(width, height, reduceMotion = true) {
   globalThis.interactionRenderer = renderer;
   const errors = [];
   start((message) => errors.push(message));
-  let time = 0;
-  const tick = (count = 1) => { for (let i = 0; i < count; i++) { wallTime += 50; renderer.loop?.(time += 50); } };
+  const tick = (count = 1) => { for (let i = 0; i < count; i++) {
+    wallTime += 50; time += 50;
+    for (const [id, timer] of [...timers]) if (wallTime >= timer.at) { timers.delete(id); timer.callback(); }
+    if (legacyLoop) legacyLoop(time);
+    for (const [id, callback] of [...frames]) { if (!frames.delete(id)) continue; callback(time); }
+  } };
   const keyDown = (value, repeat = false) => {
     const event = send(canvas, 'keydown', { key: value, repeat });
     if (!event.cancelBubble) document.dispatchEvent(event);
@@ -160,6 +174,8 @@ export function setup(width, height, reduceMotion = true) {
     pointer('pointerup', x - 30, y, 1, 'touch');
   };
   return { renderer, workspace, screen, elements, document, window, canvas, preference, errors, tick, key, keyDown, keyUp, wheel, pointer, click, pinch, projectPoint, screenPoint,
+    get pendingFrames() { return frames.size; },
+    get pendingTimers() { return timers.size; },
     get camera() { return renderer.camera; },
     get mode() { return elements.get('scene').getAttribute('data-view-mode'); },
     get focused() { return this.mode !== 'free'; },

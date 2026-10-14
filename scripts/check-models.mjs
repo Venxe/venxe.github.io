@@ -34,6 +34,7 @@ scene.traverse((object) => {
   triangles += (geometry.index?.count || positions.count) / 3 * (object.isInstancedMesh ? object.count : 1);
 });
 assert.ok(triangles < 100_000, `Model triangle budget exceeded: ${triangles}`);
+assert.ok(triangles <= 48_640, 'Performance changes must stay within 10% of the original 44,219 model triangles');
 assert.ok(meshes < 80, `Model draw budget exceeded: ${meshes}`);
 const keys = laptop.group.getObjectByName('keyboard');
 const legends = laptop.group.getObjectByName('keyboard-legends');
@@ -189,13 +190,27 @@ jaw.rotation.x = 0;
 scene.updateMatrixWorld(true);
 
 const grille = laptop.group.getObjectByName('cooling-grille');
+let grilleBytes = 0;
+grille.traverse(object => {
+  if (object.geometry) {
+    for (const attribute of Object.values(object.geometry.attributes)) grilleBytes += attribute.array.byteLength;
+    grilleBytes += object.geometry.index?.array.byteLength || 0;
+  }
+  grilleBytes += object.instanceMatrix?.array.byteLength || 0;
+});
+assert.ok(grilleBytes < 230_899, 'The repeated grille must use at least 90% less geometry/instance buffer storage');
 const grilleOrigin = grille.getWorldPosition(new THREE.Vector3());
 grilleOrigin.x += 0.006;
 grilleOrigin.y = new THREE.Box3().setFromObject(grille).max.y + 0.02;
 const grilleRay = new THREE.Raycaster(grilleOrigin, new THREE.Vector3(0, -1, 0), 0, 0.03);
-assert.equal(grilleRay.intersectObjects([shell[0], grille], false).length, 0, 'A cooling pore must pass through both the grille and the deck');
+assert.equal(grilleRay.intersectObjects([shell[0], grille], true).length, 0, 'A cooling pore must pass through both the grille and the deck');
 grilleRay.ray.origin.x = laptop.group.position.x;
 assert.ok(grilleRay.intersectObject(grille).length > 0, 'Metal must remain between cooling pores');
+for (const x of [-1.326, 0.006, 1.326]) for (const z of [-0.012, 0, 0.012]) {
+  const point = grille.localToWorld(new THREE.Vector3(x, z, 0.004));
+  grilleRay.ray.origin.copy(point); grilleRay.ray.origin.y += 0.02;
+  assert.equal(grilleRay.intersectObject(grille, true).length, 0, 'Every sampled row and end column must retain a real open pore');
+}
 assert.equal(laptop.group.getObjectByName('rubber-feet').count, 4);
 assert.equal(laptop.group.getObjectByName('bottom-screws').count, 6);
 const frontHeight = new THREE.Box3().setFromObject(laptop.group.getObjectByName('body-front-wall')).getSize(new THREE.Vector3()).y;

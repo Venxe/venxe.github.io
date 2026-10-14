@@ -144,6 +144,10 @@ export function createKeyboard(deckY) {
   const keyStates = new Map(layout.map((key, index) => [key.code, { index, pressed: false, pressing: false, offset: 0 }]));
   const keyboard = {
     group,
+    get moving() {
+      for (const state of keyStates.values()) if (state.pressing || state.offset !== (state.pressed ? keyTravel : 0)) return true;
+      return false;
+    },
     isPowerHit(hit) {
       return (hit.object === keys && hit.instanceId === powerIndex)
         || (hit.object === labelPlane && Math.floor(hit.faceIndex / 2) === powerIndex)
