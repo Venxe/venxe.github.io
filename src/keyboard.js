@@ -146,8 +146,6 @@ export function createKeyboard(deckY) {
   const keyStates = new Map(layout.map((key, index) => [key.code, { index, pressed: false, pressing: false, offset: 0 }]));
   const keyboard = {
     group,
-    powerIndex,
-    powerKey: { x: powerKey.x, y: keyCenterY + keyHeight / 2, z: powerKey.z },
     isPowerHit(hit) {
       return (hit.object === keys && hit.instanceId === powerIndex)
         || (hit.object === labelPlane && Math.floor(hit.faceIndex / 2) === powerIndex)

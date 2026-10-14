@@ -75,7 +75,7 @@ session.update();
 assert.equal(session.state.phase, 'desktop');
 session.send('lid', true);
 assert.equal(session.state.phase, 'login');
-assert.equal(session.state.reason, 'locked');
+assert.equal(session.state.closed, true);
 await session.send('login', 'fixture');
 assert.equal(session.state.phase, 'login', 'Closed lid must block sign in');
 session.send('lid', false);

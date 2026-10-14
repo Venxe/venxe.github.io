@@ -80,18 +80,12 @@ export function setup(width, height, reduceMotion = true) {
     getBoundingClientRect: () => ({ left: 0, top: 0, width, height }),
   });
   Object.defineProperties(canvas, { clientWidth: { get: () => width }, clientHeight: { get: () => height } });
-  const elements = new Map(['scene', 'hint', 'announcement', 'loading', 'masthead'].map((id) => {
-    const attributes = new Map();
-    return [id, { setAttribute(name, value) { attributes.set(name, value); }, getAttribute(name) { return attributes.get(name); }, contains: () => false, textContent: '', hidden: false }];
-  }));
+  const elements = new Map(['scene', 'hint', 'announcement', 'loading', 'masthead'].map((id) => [id, createElement('div')]));
   for (const id of ['camera-cover-toggle', 'laptop-lid-toggle', 'laptop-power']) {
-    const attributes = new Map([['aria-pressed', 'false']]);
-    elements.set(id, Object.assign(new EventTarget(), {
-      disabled: false, hidden: false,
-      setPointerCapture() {},
-      setAttribute(name, value) { attributes.set(name, value); },
-      getAttribute(name) { return attributes.get(name); },
-    }));
+    const button = createElement('button');
+    button.setAttribute('aria-pressed', 'false');
+    button.setPointerCapture = () => {};
+    elements.set(id, button);
   }
   Object.assign(elements.get('scene'), { append() {}, getBoundingClientRect: canvas.getBoundingClientRect });
   elements.set('desktop-controls', createDesktopControls());
@@ -138,11 +132,15 @@ export function setup(width, height, reduceMotion = true) {
   const workspace = renderer.scene;
   const screen = renderer.scene.getObjectByName('laptop-screen');
   assert.ok(screen, 'The rendered scene must contain the laptop screen');
-  const screenPoint = (u, v) => {
+  const projectPoint = (object, localPoint = new THREE.Vector3()) => {
+    workspace.updateMatrixWorld(true);
     renderer.camera.updateMatrixWorld();
-    const { width: screenWidth, height: screenHeight } = screen.geometry.parameters;
-    const point = screen.localToWorld(new THREE.Vector3((u - 0.5) * screenWidth, (v - 0.5) * screenHeight, 0)).project(renderer.camera);
+    const point = object.localToWorld(localPoint).project(renderer.camera);
     return [(point.x + 1) * width / 2, (1 - point.y) * height / 2];
+  };
+  const screenPoint = (u, v) => {
+    const { width: screenWidth, height: screenHeight } = screen.geometry.parameters;
+    return projectPoint(screen, new THREE.Vector3((u - 0.5) * screenWidth, (v - 0.5) * screenHeight, 0));
   };
   const click = (u, v) => {
     const [x, y] = screenPoint(u, v);
@@ -160,7 +158,7 @@ export function setup(width, height, reduceMotion = true) {
     pointer('pointerup', endX, y, 2, 'touch');
     pointer('pointerup', x - 30, y, 1, 'touch');
   };
-  return { renderer, workspace, screen, elements, document, window, canvas, preference, errors, tick, key, keyDown, keyUp, wheel, pointer, click, pinch, screenPoint,
+  return { renderer, workspace, screen, elements, document, window, canvas, preference, errors, tick, key, keyDown, keyUp, wheel, pointer, click, pinch, projectPoint, screenPoint,
     get camera() { return renderer.camera; },
     get mode() { return elements.get('scene').getAttribute('data-view-mode'); },
     get focused() { return this.mode !== 'free'; },

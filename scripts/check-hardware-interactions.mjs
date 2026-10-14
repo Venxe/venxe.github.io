@@ -6,14 +6,8 @@ export function runHardwareInteractions() {
   const shutter = cameraCover.renderer.scene.getObjectByName('camera-cover');
   const cameraHit = cameraCover.renderer.scene.getObjectByName('camera-cover-hit-area');
   const coverButton = cameraCover.elements.get('camera-cover-toggle');
-  function coverPoint() {
-    cameraCover.renderer.scene.updateMatrixWorld(true);
-    cameraCover.camera.updateMatrixWorld();
-    const point = cameraHit.getWorldPosition(new THREE.Vector3()).project(cameraCover.camera);
-    return [(point.x + 1) * 1440 / 2, (1 - point.y) * 900 / 2];
-  }
   function coverClick(pointerType = 'mouse') {
-    const [x, y] = coverPoint();
+    const [x, y] = cameraCover.projectPoint(cameraHit);
     cameraCover.pointer('pointerdown', x, y, 1, pointerType);
     cameraCover.pointer('pointerup', x, y, 1, pointerType);
   }
@@ -28,19 +22,19 @@ export function runHardwareInteractions() {
   assert.equal(shutter.position.x, -0.035);
 
   for (const cancelEvent of ['pointercancel', 'lostpointercapture']) {
-    const [x, y] = coverPoint();
+    const [x, y] = cameraCover.projectPoint(cameraHit);
     cameraCover.pointer('pointerdown', x, y);
     cameraCover.pointer(cancelEvent, x, y);
     cameraCover.pointer('pointerup', x, y);
     assert.equal(coverButton.getAttribute('aria-pressed'), 'false', 'Cancelled input must not toggle the cover');
   }
-  let [coverX, coverY] = coverPoint();
+  let [coverX, coverY] = cameraCover.projectPoint(cameraHit);
   cameraCover.pointer('pointerdown', coverX, coverY);
   cameraCover.pointer('pointermove', coverX + 20, coverY);
   cameraCover.pointer('pointerup', coverX, coverY);
   assert.equal(coverButton.getAttribute('aria-pressed'), 'false', 'Dragging must not toggle the cover');
   cameraCover.tick(20);
-  [coverX, coverY] = coverPoint();
+  [coverX, coverY] = cameraCover.projectPoint(cameraHit);
   cameraCover.pointer('pointerdown', coverX, coverY, 1, 'touch');
   cameraCover.pointer('pointerdown', coverX + 10, coverY, 2, 'touch');
   cameraCover.pointer('pointerup', coverX + 10, coverY, 2, 'touch');
@@ -91,19 +85,12 @@ export function runHardwareInteractions() {
   const lidCoverButton = laptopLid.elements.get('camera-cover-toggle');
   const screenLight = laptopLid.screen.children.find((object) => object.isPointLight);
   const openAngle = lidPivot.rotation.x;
-  function lidPoint(test = laptopLid, width = 1440, height = 900) {
-    test.renderer.scene.updateMatrixWorld(true);
-    test.camera.updateMatrixWorld();
-    const hit = test.renderer.scene.getObjectByName('lid-toggle-hit-area');
-    const point = hit.getWorldPosition(new THREE.Vector3()).project(test.camera);
-    return [(point.x + 1) * width / 2, (1 - point.y) * height / 2];
-  }
   function lidClick(pointerType = 'mouse', offsetY = 0) {
-    const [x, y] = lidPoint();
+    const [x, y] = laptopLid.projectPoint(lidHit);
     laptopLid.pointer('pointerdown', x, y + offsetY, 1, pointerType);
     laptopLid.pointer('pointerup', x, y + offsetY, 1, pointerType);
   }
-  const [lidX, lidY] = lidPoint();
+  const [lidX, lidY] = laptopLid.projectPoint(lidHit);
   laptopLid.pointer('pointermove', lidX, lidY);
   assert.equal(laptopLid.canvas.style.cursor, 'pointer', 'The notch must advertise its click action');
   const lightBeforeClose = screenLight.getWorldPosition(new THREE.Vector3());
@@ -133,20 +120,20 @@ export function runHardwareInteractions() {
   assert.equal(laptopLid.renderer.shadowMap.needsUpdate, false, 'A resting lid must not keep refreshing shadows');
 
   for (const cancelEvent of ['pointercancel', 'lostpointercapture']) {
-    const [x, y] = lidPoint();
+    const [x, y] = laptopLid.projectPoint(lidHit);
     laptopLid.pointer('pointerdown', x, y - 10);
     laptopLid.pointer(cancelEvent, x, y - 10);
     laptopLid.pointer('pointerup', x, y - 10);
     assert.equal(lidButton.getAttribute('aria-pressed'), 'false', 'Cancelled input must not toggle the lid');
   }
-  let [notchX, notchY] = lidPoint();
+  let [notchX, notchY] = laptopLid.projectPoint(lidHit);
   notchY -= 10;
   laptopLid.pointer('pointerdown', notchX, notchY);
   laptopLid.pointer('pointermove', notchX + 20, notchY);
   laptopLid.pointer('pointerup', notchX, notchY);
   assert.equal(lidButton.getAttribute('aria-pressed'), 'false', 'Dragging must not toggle the lid');
   laptopLid.tick(20);
-  [notchX, notchY] = lidPoint();
+  [notchX, notchY] = laptopLid.projectPoint(lidHit);
   notchY -= 10;
   laptopLid.pointer('pointerdown', notchX, notchY, 1, 'touch');
   laptopLid.pointer('pointerdown', notchX + 10, notchY, 2, 'touch');
@@ -249,7 +236,7 @@ export function runHardwareInteractions() {
     const target = setup(width, height);
     const button = target.elements.get('laptop-lid-toggle');
     for (const [closed, offsetY] of [['true', -10], ['false', 21]]) {
-      const [x, y] = lidPoint(target, width, height);
+      const [x, y] = target.projectPoint(target.workspace.getObjectByName('lid-toggle-hit-area'));
       assert.ok(x >= 0 && x <= width && y >= 0 && y <= height, 'The notch must fit the viewport');
       const before = button.getAttribute('aria-pressed');
       for (const [dx, dy] of [[0, 23], [16, 16]]) {
@@ -275,7 +262,7 @@ export function runHardwareInteractions() {
   send(occludedButton, 'click');
   occludedNotch.camera.position.set(0, 5, -8);
   occludedNotch.tick();
-  const [hiddenX, hiddenY] = lidPoint(occludedNotch, 390, 844);
+  const [hiddenX, hiddenY] = occludedNotch.projectPoint(occludedNotch.workspace.getObjectByName('lid-toggle-hit-area'));
   assert.ok(hiddenX >= 0 && hiddenX <= 390 && hiddenY >= 0 && hiddenY <= 844, 'The occluded notch must still project inside the viewport');
   occludedNotch.pointer('pointerdown', hiddenX, hiddenY - 10, 1, 'touch');
   occludedNotch.pointer('pointerup', hiddenX, hiddenY - 10, 1, 'touch');

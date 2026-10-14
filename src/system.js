@@ -4,7 +4,6 @@ const DURATIONS = { 'shutting-down': 1400, off: 600, booting: 1800, 'signing-out
 
 export function createSystem() {
   let phase = 'desktop';
-  let reason = 'boot';
   let started = Date.now();
   let now = started;
   let reducedMotion = false;
@@ -41,8 +40,8 @@ export function createSystem() {
       const at = started + duration();
       if (phase === 'shutting-down') enter('off', at);
       else if (phase === 'off' && restarting) enter('booting', at);
-      else if (phase === 'booting') { restarting = false; reason = 'boot'; enter('login', at); }
-      else if (phase === 'signing-out') { reason = 'logout'; enter('login', at); }
+      else if (phase === 'booting') { restarting = false; enter('login', at); }
+      else if (phase === 'signing-out') enter('login', at);
       else if (phase === 'signing-in') enter(closed ? 'login' : 'desktop', at);
       else break;
     }
@@ -77,8 +76,7 @@ export function createSystem() {
       closed = !!value;
       if (closed) {
         hold = null;
-        if (phase === 'desktop' || phase === 'signing-in') { reason = 'locked'; enter('login'); }
-        else if (phase === 'login') enter('login');
+        if (phase === 'desktop' || phase === 'signing-in' || phase === 'login') enter('login');
       }
     } else if (event === 'press') {
       if (!closed && !hold) hold = { started: now, wasOff: phase === 'off' && !restarting };
@@ -103,7 +101,7 @@ export function createSystem() {
       const brightness = phase === 'off' ? 0 : reducedMotion ? 1
         : phase === 'shutting-down' ? Math.min(1, (1 - progress) * 5)
           : phase === 'booting' ? Math.min(1, progress * 6) : 1;
-      return Object.freeze({ phase, reason, error, verifying, restarting, closed, brightness, reducedMotion });
+      return Object.freeze({ phase, error, verifying, restarting, closed, brightness, reducedMotion });
     },
     dispose() { disposed = true; hold = null; verifying = false; generation++; },
   };

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { THREE, VIEWPORTS, setup, send, wallTime, setWallTime } from './test-interactions.mjs';
+import { VIEWPORTS, setup, send, wallTime, setWallTime } from './test-interactions.mjs';
 
 export async function runDesktopInteractions() {
   for (const [width, height] of VIEWPORTS) {
@@ -113,11 +113,6 @@ export async function runDesktopInteractions() {
     powerControl(id).click();
   };
   const powerLed = powerFlow.workspace.getObjectByName('power-light');
-  function powerPoint() {
-    powerFlow.workspace.updateMatrixWorld(true);
-    const point = powerLed.getWorldPosition(new THREE.Vector3()).project(powerFlow.camera);
-    return [(point.x + 1) * 720, (1 - point.y) * 450];
-  }
   const systemGlow = powerFlow.screen.children.find((object) => object.isPointLight);
   powerAction('logout');
   powerFlow.tick(8);
@@ -147,7 +142,7 @@ export async function runDesktopInteractions() {
   assert.equal(systemGlow.intensity, 0);
   assert.equal(powerLed.visible, false);
   assert.equal(powerRoot.hidden, true);
-  let [powerX, powerY] = powerPoint();
+  let [powerX, powerY] = powerFlow.projectPoint(powerLed);
   powerFlow.pointer('pointerdown', powerX, powerY);
   powerFlow.pointer('pointerup', powerX, powerY);
   powerFlow.tick(8);
@@ -163,7 +158,7 @@ export async function runDesktopInteractions() {
   assert.equal(powerLed.visible, true);
 
   for (const cancellation of ['pointercancel', 'lostpointercapture', 'pointerleave']) {
-    [powerX, powerY] = powerPoint();
+    [powerX, powerY] = powerFlow.projectPoint(powerLed);
     powerFlow.pointer('pointerdown', powerX, powerY);
     powerFlow.tick(10);
     powerFlow.pointer(cancellation, powerX, powerY);
@@ -171,7 +166,7 @@ export async function runDesktopInteractions() {
     powerFlow.pointer('pointerup', powerX, powerY);
     assert.equal(powerFlow.screen.material.color.r, 1, 'Cancelled holds must not power off');
   }
-  [powerX, powerY] = powerPoint();
+  [powerX, powerY] = powerFlow.projectPoint(powerLed);
   const cameraBeforePower = powerFlow.camera.position.clone();
   powerFlow.pointer('pointerdown', powerX, powerY);
   powerFlow.pointer('pointermove', powerX + 30, powerY);
@@ -179,7 +174,7 @@ export async function runDesktopInteractions() {
   powerFlow.pointer('pointerup', powerX + 30, powerY);
   assert.equal(powerFlow.screen.material.color.r, 1, 'Dragging away must cancel the power hold');
   assert.ok(powerFlow.camera.position.distanceTo(cameraBeforePower) < 1e-8, 'Power gestures must not orbit the camera');
-  [powerX, powerY] = powerPoint();
+  [powerX, powerY] = powerFlow.projectPoint(powerLed);
   powerFlow.pointer('pointerdown', powerX, powerY, 1, 'touch');
   powerFlow.pointer('pointerdown', powerX + 20, powerY, 2, 'touch');
   powerFlow.tick(45);
@@ -187,7 +182,7 @@ export async function runDesktopInteractions() {
   powerFlow.pointer('pointerup', powerX + 20, powerY, 2, 'touch');
   assert.equal(powerFlow.screen.material.color.r, 1, 'A second finger must cancel the power hold');
 
-  [powerX, powerY] = powerPoint();
+  [powerX, powerY] = powerFlow.projectPoint(powerLed);
   const capturedPower = powerFlow.pointer('pointerdown', powerX, powerY);
   assert.equal(capturedPower.defaultPrevented, true, 'Physical power input must be captured before camera input');
   powerFlow.tick(39);
