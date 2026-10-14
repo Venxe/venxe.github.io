@@ -19,7 +19,7 @@ export function createKeyboard(deckY) {
   group.add(well);
   const gap = 0.026;
   const rows = [
-    'Esc F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 Del'.split(' '),
+    'Esc F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 Del Power'.split(' '),
     [...'` 1 2 3 4 5 6 7 8 9 0 - ='.split(' '), ['Backspace', 2]],
     [['Tab', 1.5], ...'Q W E R T Y U I O P [ ]'.split(' '), ['\\', 1.5]],
     [['Caps', 1.75], ...'A S D F G H J K L ;'.split(' '), "'", ['Enter', 2.25]],
@@ -96,7 +96,7 @@ export function createKeyboard(deckY) {
     }
     const vertex = index * 4;
     legendIndices.push(vertex, vertex + 1, vertex + 2, vertex + 2, vertex + 1, vertex + 3);
-    if (!key.label) continue;
+    if (!key.label || key.code === 'Power') continue;
     const fontSize = key.depth / LAPTOP_DEPTH_SCALE < 0.15 ? 15 : key.label.length === 1 ? 24 : 16;
     labelContext.font = `${fontSize}px "Segoe UI", Arial, sans-serif`;
     labelContext.fillText(key.label,
@@ -118,12 +118,42 @@ export function createKeyboard(deckY) {
   labelPlane.position.set(0, keyCenterY + keyHeight / 2 + 0.0015, keyboardCenterZ);
   group.add(labelPlane);
 
+  const powerIndex = layout.findIndex((key) => key.code === 'Power');
+  const powerKey = layout[powerIndex];
+  const powerIcon = new Image();
+  const iconEvents = new AbortController();
+  function drawPowerIcon() {
+    if (!powerIcon.naturalWidth) return;
+    const size = 24;
+    const x = (powerKey.x / keyboardWidth + 0.5) * labels.width;
+    const y = ((powerKey.z - keyboardCenterZ) / keyboardDepth + 0.5) * labels.height;
+    labelContext.drawImage(powerIcon, x - size / 2, y - size / 2, size, size);
+    labelTexture.needsUpdate = true;
+  }
+  powerIcon.addEventListener('load', drawPowerIcon, { signal: iconEvents.signal });
+  labelTexture.addEventListener('dispose', () => iconEvents.abort());
+  powerIcon.src = new URL('../assets/icons/system-shutdown.svg', import.meta.url).href;
+  if (powerIcon.complete) drawPowerIcon();
+  const powerLight = new THREE.Mesh(new THREE.CircleGeometry(0.008, 12), new THREE.MeshBasicMaterial({ color: '#b8c9ef', toneMapped: false }));
+  powerLight.name = 'power-light';
+  powerLight.rotation.x = -Math.PI / 2;
+  powerLight.position.set(powerKey.x + powerKey.width * 0.35, keyCenterY + keyHeight / 2 + 0.002, powerKey.z - powerKey.depth * 0.32);
+  group.add(powerLight);
+
   const keyTravel = 0.012;
   const pressSeconds = 0.045;
   const releaseSeconds = 0.09;
   const keyStates = new Map(layout.map((key, index) => [key.code, { index, pressed: false, pressing: false, offset: 0 }]));
   const keyboard = {
     group,
+    powerIndex,
+    powerKey: { x: powerKey.x, y: keyCenterY + keyHeight / 2, z: powerKey.z },
+    isPowerHit(hit) {
+      return (hit.object === keys && hit.instanceId === powerIndex)
+        || (hit.object === labelPlane && Math.floor(hit.faceIndex / 2) === powerIndex)
+        || hit.object === powerLight;
+    },
+    setPower(on) { powerLight.visible = on; },
     setPressed(code, pressed) {
       const key = keyStates.get(code);
       if (!key || key.pressed === pressed) return;
@@ -146,6 +176,7 @@ export function createKeyboard(deckY) {
         }
         if (offset === state.offset) continue;
         state.offset = offset;
+        if (state.index === powerIndex) powerLight.position.y = keyCenterY + keyHeight / 2 + 0.002 - offset;
         const key = layout[state.index];
         transform.position.set(key.x, keyCenterY - offset, key.z);
         transform.scale.set(key.width / keyWidth, 1, key.depth / keyDepth);

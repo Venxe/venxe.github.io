@@ -19,7 +19,7 @@ export function createScene(container) {
   renderer.domElement.tabIndex = 0;
   renderer.domElement.setAttribute('role', 'application');
   renderer.domElement.setAttribute('aria-label', 'Interactive 3D workspace');
-  renderer.domElement.setAttribute('aria-describedby', 'scene-help');
+  renderer.domElement.setAttribute('aria-describedby', 'scene-help power-help');
   container.append(renderer.domElement);
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(getComputedStyle(container).getPropertyValue('--background').trim());
@@ -222,6 +222,7 @@ export function createScene(container) {
     const lidHit = hits.find((hit) => hit.object === laptop.lid.hitArea);
     if (lidHit && (!first || first.distance >= lidHit.distance - 1e-6)) return { kind: 'lid' };
     if (!laptop.lid.closed && !laptop.lid.moving) {
+      if (first && laptop.keyboard.isPowerHit(first)) return { kind: 'power' };
       if (first?.object === laptop.screen) return { kind: 'screen', uv: first.uv };
       const coverHit = hits.find((hit) => hit.object === laptop.webcam.hitArea);
       // The hit area is only active on the front bezel; foreground objects still win.
@@ -244,6 +245,7 @@ export function createScene(container) {
     renderer.setAnimationLoop(null);
     controls.dispose();
     laptop.desktop.dispose();
+    laptop.system.dispose();
     const geometries = new Set();
     const materials = new Set();
     const textures = new Set();
@@ -271,5 +273,5 @@ export function createScene(container) {
   camera.position.copy(homePose().position);
   controls.update();
   renderer.shadowMap.needsUpdate = true;
-  return { renderer, scene, camera, controls, steam, keyboard: laptop.keyboard, webcam: laptop.webcam, lid: laptop.lid, desktop: laptop.desktop, homePose, laptopPose, screenPose, render, resize, pickAt, dispose };
+  return { renderer, scene, camera, controls, steam, keyboard: laptop.keyboard, webcam: laptop.webcam, lid: laptop.lid, desktop: laptop.desktop, system: laptop.system, homePose, laptopPose, screenPose, render, resize, pickAt, dispose };
 }

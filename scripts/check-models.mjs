@@ -72,7 +72,7 @@ const labelledKeys = legends.material.map.image.labels.map(({ text, x, y }) => {
   assert.ok(Math.hypot(center.x - point.x, center.z - point.z) < 1e-6, `Legend ${text} must align with its keycap`);
   return { text, index, size: bounds.getSize(new THREE.Vector3()) };
 });
-assert.equal(labelledKeys.length, keys.count - 1, 'Only the space bar may have no legend');
+assert.equal(labelledKeys.length, keys.count - 2, 'The space bar is blank and the power key uses an icon instead of text');
 const letter = labelledKeys.find(({ text }) => text === 'A').size;
 for (const text of ['Shift', 'Backspace', 'Enter', 'Tab', 'Caps']) {
   const matches = labelledKeys.filter((key) => key.text === text);

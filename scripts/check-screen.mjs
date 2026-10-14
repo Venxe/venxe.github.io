@@ -11,9 +11,10 @@ globalThis.Image = TestImage;
 const start = new Date(2026, 9, 13, 13, 45).getTime();
 Date.now = () => start;
 const { createScreen } = await import('../src/screen.js');
+const { createSystem } = await import('../src/system.js');
 
-function setup() {
-  const desktop = createScreen();
+function setup(system) {
+  const desktop = createScreen(system);
   const root = createDesktopControls();
   root.hidden = false;
   const events = new AbortController();
@@ -21,13 +22,13 @@ function setup() {
   desktop.bindControls(root, (message) => messages.push(message), events.signal);
   const surface = desktop.texture.image;
   let now = start;
-  const update = (time = now) => { now = time; desktop.update(time); };
+  const update = (time = now) => { now = time; system?.update(time); desktop.update(time); };
   update();
   const control = (id) => root.querySelector(`[data-control="${id}"]`);
   const uv = (x, y) => ({ x: x / surface.width, y: 1 - y / surface.height });
   function point(id) {
     if (id === 'volume') { const arc = surface.arcs.at(-1); return uv(arc.x, arc.y); }
-    const iconName = { settings: 'battery-level-80', mute: 'audio-volume-', previous: 'pan-start', next: 'pan-end', networks: 'pan-end' }[id];
+    const iconName = { settings: 'battery-level-80', mute: 'audio-volume-', previous: 'pan-start', next: 'pan-end', networks: 'pan-end', 'power-menu': 'system-shutdown' }[id];
     if (iconName) {
       const images = surface.images.filter((image) => image.src.includes(iconName));
       for (const image of images) {
@@ -202,3 +203,44 @@ test.control('clock').click();
 assert.equal(test.desktop.texture.version, beforeDispose);
 console.log('PASS: centered live local clock, icon order/assets/loading/failure/recovery, idle uploads, calendar dates/months/leap year, keyboard focus, volume/mute/clamping, Wi-Fi selection/cancellation, power mode, hidden controls, and disposal.');
 console.log('NOT CHECKED: GPU pixels, native browser input behavior, screen-reader output, or FPS.');
+
+const system = createSystem();
+const session = setup(system);
+session.click('settings');
+session.click('power-menu');
+for (const id of ['logout', 'restart', 'shutdown']) assert.ok(session.point(id), `${id} must have a visible hit region`);
+session.click('logout');
+assert.equal(system.state.phase, 'signing-out');
+assert.equal(session.control('clock').hidden, true);
+session.update(start + 350);
+assert.equal(system.state.phase, 'login');
+assert.equal(session.control('password').type, 'password');
+assert.equal(session.control('clock').hidden, true);
+session.control('password').value = 'invalid-fixture';
+session.control('password').dispatchEvent(new Event('input'));
+session.update();
+assert.ok(session.surface.labels.some(({ text }) => text === '•'.repeat(15)));
+assert.ok(!session.surface.labels.some(({ text }) => text.includes('invalid-fixture')), 'Canvas must only receive masked input');
+session.control('login').click();
+assert.equal(session.control('password').value, '', 'Submission must immediately clear the native input');
+await new Promise((resolve) => setTimeout(resolve, 20));
+session.update();
+assert.equal(session.control('password').getAttribute('aria-invalid'), 'true');
+assert.equal(document.activeElement, session.control('password'));
+assert.ok(session.messages.some((message) => /Incorrect/.test(message)));
+session.control('password').value = 'partial-fixture';
+system.send('lid', true);
+session.update();
+assert.equal(session.control('password').value, '', 'Closing the lid must clear partial password input even while already signed out');
+system.send('lid', false);
+session.update();
+session.click('power-menu');
+assert.equal(session.control('logout').hidden, true, 'Signed-out users cannot log out again');
+session.click('shutdown');
+session.update(start + 1750);
+assert.equal(system.state.phase, 'off');
+assert.equal(session.desktop.hitTest(session.uv(600, 450)), null);
+assert.ok(!session.surface.labels.some(({ text }) => text === 'Sign In'));
+session.dispose();
+system.dispose();
+console.log('PASS: visible power actions, logout/login layout, password masking, error/focus feedback, and off-screen input gating.');

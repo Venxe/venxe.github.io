@@ -3,6 +3,7 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { SETTINGS, LAPTOP_DEPTH_SCALE } from './config.js';
 import { createScreen } from './screen.js';
 import { createKeyboard } from './keyboard.js';
+import { createSystem } from './system.js';
 import { createLaptopBody, createWebcam, LAPTOP_SIZE } from './laptop-details.js';
 
 const LID_OPEN_ANGLE = THREE.MathUtils.degToRad(-20);
@@ -64,7 +65,8 @@ export function createLaptop() {
   rounded(bodyWidth, bodyDepth, 0.085, 0.035, metal, lidContent, 0, bodyDepth / 2, 0).name = 'laptop-lid';
   rounded(bodyWidth - 0.08, bodyDepth - 0.054, 0.008, 0.004, dark, lidContent, 0, bodyDepth / 2, 0.0465);
 
-  const desktop = createScreen();
+  const system = createSystem();
+  const desktop = createScreen(system);
   const { texture } = desktop;
   // Display pixels stay independent of warm studio lights and specular hotspots.
   const { screenWidth, screenHeight } = LAPTOP_SIZE;
@@ -109,6 +111,7 @@ export function createLaptop() {
     setClosed(value) {
       if (closed === value) return;
       closed = value;
+      system.send('lid', closed);
       from = lidPivot.rotation.x;
       elapsed = 0;
     },
@@ -140,12 +143,14 @@ export function createLaptop() {
         const progress = THREE.MathUtils.clamp((screenElapsed - delay) / duration, 0, 1);
         const eased = progress * progress * (3 - 2 * progress);
         screenBrightness = screenElapsed === delay + duration ? brightnessTarget : THREE.MathUtils.lerp(screenFrom, brightnessTarget, eased);
-        screen.material.color.setScalar(screenBrightness);
-        screenLight.intensity = SCREEN_LIGHT_INTENSITY * screenBrightness;
       }
+      const brightness = screenBrightness * system.state.brightness;
+      screen.material.color.setScalar(brightness);
+      screenLight.intensity = SCREEN_LIGHT_INTENSITY * brightness;
+      keyboard.setPower(system.state.phase !== 'off');
       return moved;
     },
   };
 
-  return { group, screen, desktop, keyboard, ports: body.ports, webcam, lid };
+  return { group, screen, desktop, system, keyboard, ports: body.ports, webcam, lid };
 }

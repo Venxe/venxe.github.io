@@ -28,9 +28,23 @@
       <p id="hint" class="hint" aria-hidden="true">Drag · Zoom · Select screen</p>
       <button id="camera-cover-toggle" class="camera-cover-toggle sr-only" type="button" aria-pressed="false">Camera privacy cover</button>
       <button id="laptop-lid-toggle" class="laptop-lid-toggle sr-only" type="button" aria-pressed="false">Laptop lid</button>
+      <button id="laptop-power" class="laptop-power sr-only" type="button" aria-describedby="power-help">Laptop power</button>
+      <p id="power-help" class="sr-only">Click the Power key to start when off. Hold for two seconds to force power off when on. The power menu in quick settings offers Log Out, Restart and Power Off. Logging out, starting up or reopening the lid shows the password screen. Type your password and press Enter to sign in.</p>
       <div id="desktop-controls" class="sr-only" role="group" aria-label="Laptop desktop" hidden>
         <button type="button" data-control="clock" aria-expanded="false" aria-controls="desktop-calendar">Date and time</button>
         <button type="button" data-control="settings" aria-expanded="false" aria-controls="desktop-settings">Quick settings</button>
+        <button type="button" data-control="power-menu" aria-expanded="false" aria-controls="desktop-power">Power options</button>
+        <section id="desktop-power" data-panel="power" aria-label="Power options" hidden>
+          <button type="button" data-control="logout">Log Out</button>
+          <button type="button" data-control="restart">Restart</button>
+          <button type="button" data-control="shutdown">Power Off</button>
+        </section>
+        <section data-login aria-label="Sign in to Venxe" hidden>
+          <label for="desktop-password">Password</label>
+          <input id="desktop-password" data-control="password" type="password" maxlength="128" autocomplete="current-password" aria-describedby="desktop-login-error" spellcheck="false">
+          <p id="desktop-login-error" data-login-error></p>
+          <button type="button" data-control="login">Sign In</button>
+        </section>
         <section id="desktop-calendar" data-panel="calendar" aria-label="Calendar" hidden>
           <p data-control="date-heading"></p>
           <button type="button" data-control="previous">Previous month</button>

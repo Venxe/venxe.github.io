@@ -33,6 +33,7 @@ canvas:focus-visible { outline-offset: -4px; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 .camera-cover-toggle:focus-visible, .laptop-lid-toggle:focus-visible { position: fixed; left: calc(24px + env(safe-area-inset-left)); bottom: calc(48px + env(safe-area-inset-bottom)); z-index: 1; width: auto; height: auto; padding: 10px 14px; clip: auto; overflow: visible; white-space: normal; border: 1px solid var(--muted); border-radius: 5px; background: var(--background); color: var(--accent); }
 .laptop-lid-toggle:focus-visible { bottom: calc(96px + env(safe-area-inset-bottom)); }
+.laptop-power:focus-visible { position: fixed; left: calc(24px + env(safe-area-inset-left)); bottom: calc(144px + env(safe-area-inset-bottom)); z-index: 1; width: auto; height: auto; padding: 10px 14px; clip: auto; overflow: visible; white-space: normal; border: 1px solid var(--muted); border-radius: 5px; background: var(--background); color: var(--accent); }
 .noscript { position: fixed; inset: 0; margin: 0; padding: 24px; display: grid; place-items: center; background: var(--background); z-index: 2; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }

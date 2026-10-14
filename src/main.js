@@ -5,13 +5,14 @@ import { SETTINGS } from './config.js';
 export function start(showError) {
   const container = document.querySelector('#scene');
   const app = createScene(container);
-  const { renderer, scene, camera, controls, steam, keyboard, webcam, lid, desktop } = app;
+  const { renderer, scene, camera, controls, steam, keyboard, webcam, lid, desktop, system } = app;
   const canvas = renderer.domElement;
   const hint = document.querySelector('#hint');
   const masthead = document.querySelector('.masthead');
   const announcement = document.querySelector('#announcement');
   const cameraCoverButton = document.querySelector('#camera-cover-toggle');
   const lidButton = document.querySelector('#laptop-lid-toggle');
+  const powerButton = document.querySelector('#laptop-power');
   const desktopControls = document.querySelector('#desktop-controls');
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const events = new AbortController();
@@ -43,11 +44,15 @@ export function start(showError) {
   let disposed = false;
   let touchedCamera = false;
   let desktopPointer = null;
+  let powerPress = null;
+  let powerClickHandledAt = -Infinity;
+  let lastSystemPhase = system.state.phase;
 
   function announce(message) { announcement.textContent = message; }
   desktop.bindControls(desktopControls, announce, events.signal);
   function desktopInputEnabled() {
-    return viewMode !== 'free' && !transition && !contextLost && !disposed && !document.hidden && !lid.closed && !lid.moving;
+    return viewMode !== 'free' && !transition && !contextLost && !disposed && !document.hidden && !lid.closed && !lid.moving
+      && ['desktop', 'login'].includes(system.state.phase);
   }
   function updateDesktopControls() {
     const hidden = !desktopInputEnabled();
@@ -77,11 +82,11 @@ export function start(showError) {
   }
   function updateHud() {
     const immersive = viewMode === 'screen';
-    if (immersive && document.activeElement && (document.activeElement === cameraCoverButton || document.activeElement === lidButton || masthead.contains(document.activeElement))) {
+    if (immersive && document.activeElement && (document.activeElement === cameraCoverButton || document.activeElement === lidButton || document.activeElement === powerButton || masthead.contains(document.activeElement))) {
       canvas.focus({ preventScroll: true });
     }
     container.setAttribute('data-view-mode', viewMode);
-    for (const element of [masthead, hint, cameraCoverButton, lidButton]) element.hidden = immersive;
+    for (const element of [masthead, hint, cameraCoverButton, lidButton, powerButton]) element.hidden = immersive;
     hint.textContent = viewMode === 'free' ? 'Drag · Zoom · Select screen' : 'Zoom in to view screen · Zoom out to return';
     updateDesktopControls();
   }
@@ -101,6 +106,7 @@ export function start(showError) {
     updateDesktopControls();
   }
   function moveTo(pose) {
+    cancelPowerPress();
     const fromOrbit = new THREE.Spherical().setFromVector3(camera.position.clone().sub(controls.target));
     const toOrbit = new THREE.Spherical().setFromVector3(pose.position.clone().sub(pose.target));
     // Take the short arc around the scene instead of a line through the laptop.
@@ -171,7 +177,90 @@ export function start(showError) {
     rememberCamera();
   }
   // Capture input before OrbitControls so inertia cannot skip a settled stage.
+  function powerAvailable() {
+    return !transition && !contextLost && !disposed && !document.hidden && !lid.closed && !lid.moving;
+  }
+  function cancelPowerPress() {
+    system.send('cancel-press');
+    keyboard.setPressed('Power', false);
+    powerPress = null;
+  }
+  function beginPowerPress(source, event) {
+    if (!powerAvailable() || powerPress) return;
+    powerPress = { source, id: event.pointerId, x: event.clientX, y: event.clientY };
+    system.send('press');
+    keyboard.setPressed('Power', true);
+    announce(system.state.phase === 'off' ? 'Release to start up.' : 'Hold for two seconds to power off.');
+  }
+  function endPowerPress() {
+    if (powerPress && powerPress.source !== 'canvas') powerClickHandledAt = Date.now();
+    system.send('release');
+    keyboard.setPressed('Power', false);
+    powerPress = null;
+  }
+  // Own the power gesture before OrbitControls can interpret it as a camera drag.
+  canvas.addEventListener('pointerdown', (event) => {
+    if (powerPress) {
+      cancelPowerPress();
+      event.stopImmediatePropagation();
+      return;
+    }
+    if (event.button !== 0 || touchPointers.size || !powerAvailable() || app.pickAt(event.clientX, event.clientY)?.kind !== 'power') return;
+    beginPowerPress('canvas', event);
+    canvas.setPointerCapture(event.pointerId);
+    canvas.focus({ preventScroll: true });
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }, captureOptions);
+  canvas.addEventListener('pointermove', (event) => {
+    if (powerPress?.source !== 'canvas' || powerPress.id !== event.pointerId) return;
+    if (Math.hypot(event.clientX - powerPress.x, event.clientY - powerPress.y) > SETTINGS.dragThreshold
+      || app.pickAt(event.clientX, event.clientY)?.kind !== 'power') cancelPowerPress();
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }, captureOptions);
+  canvas.addEventListener('pointerup', (event) => {
+    if (powerPress?.source !== 'canvas' || powerPress.id !== event.pointerId) return;
+    if (powerAvailable() && app.pickAt(event.clientX, event.clientY)?.kind === 'power') endPowerPress();
+    else cancelPowerPress();
+    canvas.releasePointerCapture(event.pointerId);
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }, captureOptions);
+  for (const type of ['pointercancel', 'lostpointercapture', 'pointerleave']) {
+    canvas.addEventListener(type, () => { if (powerPress?.source === 'canvas') cancelPowerPress(); }, captureOptions);
+  }
+  powerButton.addEventListener('keydown', (event) => {
+    if (!['Enter', ' '].includes(event.key)) return;
+    event.preventDefault();
+    if (!event.repeat) beginPowerPress('keyboard', event);
+  }, listenerOptions);
+  powerButton.addEventListener('keyup', (event) => {
+    if (['Enter', ' '].includes(event.key) && powerPress?.source === 'keyboard') { event.preventDefault(); endPowerPress(); }
+  }, listenerOptions);
+  powerButton.addEventListener('pointerdown', (event) => {
+    if (powerPress) { cancelPowerPress(); return; }
+    if (event.button === 0) { beginPowerPress('button', event); powerButton.setPointerCapture(event.pointerId); }
+  }, listenerOptions);
+  powerButton.addEventListener('pointerup', (event) => {
+    if (powerPress?.source === 'button' && powerPress.id === event.pointerId) endPowerPress();
+  }, listenerOptions);
+  powerButton.addEventListener('pointermove', (event) => {
+    if (powerPress?.source === 'button' && Math.hypot(event.clientX - powerPress.x, event.clientY - powerPress.y) > SETTINGS.dragThreshold) cancelPowerPress();
+  }, listenerOptions);
+  for (const type of ['blur', 'pointercancel', 'lostpointercapture', 'pointerleave']) powerButton.addEventListener(type, () => {
+    if (powerPress && powerPress.source !== 'canvas') cancelPowerPress();
+  }, listenerOptions);
+  powerButton.addEventListener('click', (event) => {
+    if (Date.now() - powerClickHandledAt < 100) return;
+    // Assistive technologies can activate a button without a preceding key/pointer event.
+    if (event.detail === 0 && powerAvailable() && system.state.phase === 'off') {
+      system.send('press');
+      system.send('release');
+    }
+  }, listenerOptions);
   canvas.addEventListener('wheel', (event) => {
+    if (powerPress) cancelPowerPress();
     if (event.deltaY === 0) return;
     if (desktopInputEnabled() && desktop.handleInput(event, desktopUv(event))) {
       event.preventDefault();
@@ -242,6 +331,7 @@ export function start(showError) {
     if (desktopInputEnabled() && hit?.kind === 'screen' && desktop.hitTest(hit.uv)) return 'desktop';
     if (viewMode === 'screen') return null;
     if (hit?.kind === 'lid') return 'lid';
+    if (hit?.kind === 'power') return 'power';
     return hit?.kind === 'webcam' ? 'webcam' : viewMode === 'free' && hit?.kind === 'screen' ? 'screen' : null;
   }
   function toggleCameraCover() {
@@ -254,6 +344,7 @@ export function start(showError) {
   cameraCoverButton.addEventListener('click', toggleCameraCover, listenerOptions);
   function toggleLaptopLid() {
     if (contextLost || disposed || document.hidden) return;
+    cancelPowerPress();
     lid.setClosed(!lid.closed);
     if (lid.closed && viewMode !== 'free') leaveLaptop();
     lidButton.setAttribute('aria-pressed', String(lid.closed));
@@ -266,6 +357,7 @@ export function start(showError) {
     if (keyboard.reset()) renderer.shadowMap.needsUpdate = true;
   }
   function resetInput() {
+    cancelPowerPress();
     resetKeyboard();
     desktopPointer = null;
     desktop.handleInput({ type: 'pointercancel' }, null);
@@ -278,7 +370,9 @@ export function start(showError) {
   }
   document.addEventListener('keydown', (event) => {
     if (contextLost || disposed || document.hidden) return;
-    if (!event.repeat) keyboard.setPressed(event.code, true);
+    if (document.activeElement?.type === 'password' && event.key !== 'Escape') return;
+    if (document.activeElement === powerButton && ['Enter', ' '].includes(event.key)) return;
+    if (!event.repeat && event.code !== 'Power') keyboard.setPressed(event.code, true);
     if (event.key === 'Escape' && !event.repeat && viewMode !== 'free' && !transition) {
       event.preventDefault();
       if (!desktop.closePanel()) stepBack();
@@ -364,6 +458,13 @@ export function start(showError) {
     const delta = previousTime === null ? 0 : Math.min((time - previousTime) / 1000, 0.05);
     previousTime = time;
     elapsed += delta;
+    system.update(Date.now(), reducedMotion.matches);
+    if (lastSystemPhase !== system.state.phase) {
+      lastSystemPhase = system.state.phase;
+      resetKeyboard();
+      if (system.state.phase === 'off' && !system.state.restarting && viewMode === 'screen') changeView('laptop', app.laptopPose());
+    }
+    powerButton.disabled = !powerAvailable();
     if (transition) {
       const progress = Math.min((elapsed - transition.started) / SETTINGS.transitionSeconds, 1);
       const eased = progress * progress * (3 - 2 * progress);
@@ -390,7 +491,7 @@ export function start(showError) {
     scene.fog.near = controls.getDistance() + 6;
     scene.fog.far = scene.fog.near + 20;
     updateDesktopControls();
-    if (!lid.closed && !lid.moving) desktop.update();
+    desktop.update();
     app.render(viewMode === 'screen' && !transition);
   }
   const observer = new ResizeObserver(() => {

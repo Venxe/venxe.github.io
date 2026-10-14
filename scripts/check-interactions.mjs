@@ -83,10 +83,11 @@ function setup(width, height, reduceMotion = true) {
     const attributes = new Map();
     return [id, { setAttribute(name, value) { attributes.set(name, value); }, getAttribute(name) { return attributes.get(name); }, contains: () => false, textContent: '', hidden: false }];
   }));
-  for (const id of ['camera-cover-toggle', 'laptop-lid-toggle']) {
+  for (const id of ['camera-cover-toggle', 'laptop-lid-toggle', 'laptop-power']) {
     const attributes = new Map([['aria-pressed', 'false']]);
     elements.set(id, Object.assign(new EventTarget(), {
       disabled: false, hidden: false,
+      setPointerCapture() {},
       setAttribute(name, value) { attributes.set(name, value); },
       getAttribute(name) { return attributes.get(name); },
     }));
@@ -980,7 +981,8 @@ displayPower.key('Enter');
 assert.equal(displayPower.focused, true, 'A fully open lid must allow screen focus during its display fade');
 displayPower.tick(14);
 assert.equal(displayMaterial.color.r, 1, 'The display must finish waking after the hinge stops moving');
-assert.equal(displayMaterial.map.version, desktopTextureVersion, 'Entering laptop focus must preserve the fixed-size top bar');
+assert.ok(displayMaterial.map.version > desktopTextureVersion, 'Closing the lid must replace the desktop with the login screen');
+assert.ok(displayMaterial.map.image.labels.some(({ text }) => text === 'Password'), 'Reopening must show the password field');
 assert.equal(displayMaterial.opacity, 1);
 send(displayButton, 'click');
 displayPower.tick(14);
@@ -1113,3 +1115,102 @@ for (const [width, height] of VIEWPORTS) {
   desktopTest.close();
 }
 console.log('PASS: desktop UV input in both focus views, phone layouts, Escape precedence, wheel/touch menu isolation, pinch from UI, tab-resume clock, context loss, and cleanup.');
+
+const powerFlow = setup(1440, 900, false);
+powerFlow.key('Enter');
+powerFlow.tick(20);
+const powerRoot = powerFlow.elements.get('desktop-controls');
+const powerControl = (id) => powerRoot.querySelector(`[data-control="${id}"]`);
+const powerAction = (id) => {
+  powerControl('settings').click();
+  powerControl('power-menu').click();
+  powerControl(id).click();
+};
+const powerLed = powerFlow.workspace.getObjectByName('power-light');
+function powerPoint() {
+  powerFlow.workspace.updateMatrixWorld(true);
+  const point = powerLed.getWorldPosition(new THREE.Vector3()).project(powerFlow.camera);
+  return [(point.x + 1) * 720, (1 - point.y) * 450];
+}
+const systemGlow = powerFlow.screen.children.find((object) => object.isPointLight);
+powerAction('logout');
+powerFlow.tick(8);
+assert.equal(powerControl('password').hidden, false);
+assert.equal(powerControl('clock').hidden, true);
+const digestBoundary = crypto.subtle.digest;
+crypto.subtle.digest = async () => Uint8Array.from(Buffer.from('8cd6cb7e1601eb5dcd0a0d3d8f62c2dd8ee483819f9130a34259a217e927679f', 'hex')).buffer;
+powerControl('password').value = 'fixture';
+send(powerControl('password'), 'keydown', { key: 'Enter' });
+await new Promise((resolve) => setTimeout(resolve, 0));
+crypto.subtle.digest = digestBoundary;
+powerFlow.tick(8);
+assert.equal(powerControl('clock').hidden, false, 'Submitting the native password field must restore the desktop');
+powerAction('shutdown');
+powerFlow.tick(10);
+assert.ok(powerFlow.screen.material.map.image.labels.some(({ text }) => text === 'Shutting down…'));
+powerFlow.tick(18);
+assert.equal(powerFlow.screen.material.color.r, 0);
+assert.equal(systemGlow.intensity, 0);
+assert.equal(powerLed.visible, false);
+assert.equal(powerRoot.hidden, true);
+let [powerX, powerY] = powerPoint();
+powerFlow.pointer('pointerdown', powerX, powerY);
+powerFlow.pointer('pointerup', powerX, powerY);
+powerFlow.tick(8);
+assert.ok(powerFlow.screen.material.map.image.labels.some(({ text }) => text === 'Starting up…'));
+powerFlow.tick(28);
+assert.equal(powerControl('password').hidden, false);
+assert.equal(powerLed.visible, true);
+
+for (const cancellation of ['pointercancel', 'lostpointercapture', 'pointerleave']) {
+  [powerX, powerY] = powerPoint();
+  powerFlow.pointer('pointerdown', powerX, powerY);
+  powerFlow.tick(10);
+  powerFlow.pointer(cancellation, powerX, powerY);
+  powerFlow.tick(40);
+  powerFlow.pointer('pointerup', powerX, powerY);
+  assert.equal(powerFlow.screen.material.color.r, 1, 'Cancelled holds must not power off');
+}
+[powerX, powerY] = powerPoint();
+const cameraBeforePower = powerFlow.camera.position.clone();
+powerFlow.pointer('pointerdown', powerX, powerY);
+powerFlow.pointer('pointermove', powerX + 30, powerY);
+powerFlow.tick(45);
+powerFlow.pointer('pointerup', powerX + 30, powerY);
+assert.equal(powerFlow.screen.material.color.r, 1, 'Dragging away must cancel the power hold');
+assert.ok(powerFlow.camera.position.distanceTo(cameraBeforePower) < 1e-8, 'Power gestures must not orbit the camera');
+[powerX, powerY] = powerPoint();
+powerFlow.pointer('pointerdown', powerX, powerY, 1, 'touch');
+powerFlow.pointer('pointerdown', powerX + 20, powerY, 2, 'touch');
+powerFlow.tick(45);
+powerFlow.pointer('pointerup', powerX, powerY, 1, 'touch');
+powerFlow.pointer('pointerup', powerX + 20, powerY, 2, 'touch');
+assert.equal(powerFlow.screen.material.color.r, 1, 'A second finger must cancel the power hold');
+
+[powerX, powerY] = powerPoint();
+powerFlow.pointer('pointerdown', powerX, powerY);
+powerFlow.tick(39);
+assert.equal(powerFlow.screen.material.color.r, 1);
+powerFlow.tick();
+assert.equal(powerFlow.screen.material.color.r, 0, 'Two seconds must force power off');
+powerFlow.pointer('pointerup', powerX, powerY);
+powerFlow.tick(5);
+assert.equal(powerFlow.screen.material.color.r, 0, 'Releasing must not restart after a forced shutdown');
+const hardwarePowerButton = powerFlow.elements.get('laptop-power');
+send(hardwarePowerButton, 'click', { detail: 0 });
+powerFlow.tick(36);
+assert.equal(powerControl('password').hidden, false, 'Assistive click must start a powered-off laptop');
+send(hardwarePowerButton, 'keydown', { key: 'Enter' });
+powerFlow.tick(40);
+send(hardwarePowerButton, 'keyup', { key: 'Enter' });
+send(hardwarePowerButton, 'click', { detail: 0 });
+powerFlow.tick();
+assert.equal(powerFlow.screen.material.color.r, 0, 'A synthesized click after key release must not reboot');
+send(powerFlow.elements.get('laptop-lid-toggle'), 'click');
+powerFlow.tick(14);
+send(powerFlow.elements.get('laptop-lid-toggle'), 'click');
+powerFlow.tick(30);
+assert.equal(powerFlow.screen.material.color.r, 0, 'Reopening a powered-off laptop must leave its screen black');
+assert.equal(systemGlow.intensity, 0);
+powerFlow.close();
+console.log('PASS: complete native login and power cycles, physical power picking, LED/glow, cancelled/drag/multi-touch holds, assistive power input, and off-state lid reopening.');

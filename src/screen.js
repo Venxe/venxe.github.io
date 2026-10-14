@@ -1,9 +1,11 @@
 import * as THREE from 'three';
 import { DESKTOP_SIZE } from './config.js';
+import { createSystem } from './system.js';
 
 const NETWORKS = ['Venxe Studio', 'Coffee Corner'];
 const ICON_NAMES = ['audio-volume-high', 'audio-volume-medium', 'audio-volume-low', 'audio-volume-muted',
-  'battery-level-80', 'network-wireless-signal-excellent', 'network-wireless-disabled', 'pan-start', 'pan-end'];
+  'battery-level-80', 'network-wireless-signal-excellent', 'network-wireless-disabled', 'pan-start', 'pan-end',
+  'system-shutdown', 'system-reboot', 'system-log-out'];
 const inside = (point, box) => point && box && point.x >= box.x && point.x < box.x + box.w && point.y >= box.y && point.y < box.y + box.h;
 const dateKey = (date) => `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
 const fullDate = (date) => date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
@@ -33,7 +35,7 @@ function drawWallpaper(context, width, height) {
 }
 
 // One desktop state serves the texture, UV picking and native keyboard controls.
-export function createScreen() {
+export function createScreen(system = createSystem()) {
   const canvas = document.createElement('canvas');
   canvas.width = DESKTOP_SIZE.width;
   canvas.height = DESKTOP_SIZE.height;
@@ -72,6 +74,11 @@ export function createScreen() {
   let root = null;
   let announce = () => {};
   const controls = new Map();
+  let lastPhase = system.state.phase;
+  let lastError = '';
+  let lastVerifying = false;
+  let lastClosed = system.state.closed;
+  let animationFrame = -1;
 
   for (const name of ICON_NAMES) {
     const image = new Image();
@@ -84,11 +91,29 @@ export function createScreen() {
   }
   function layout() {
     items = [];
-    // The bar, panels and hit regions share fixed desktop coordinates.
-    item('clock', clock, (canvas.width - 140) / 2, 0, 140, barHeight, { inPanel: false });
-    item('settings', 'Quick settings', canvas.width - 84, 0, 76, barHeight, { inPanel: false });
     panelBox = null;
+    const state = system.state;
+    if (!['desktop', 'login'].includes(state.phase)) return;
+    if (state.phase === 'login') {
+      item('password', 'Password', 442, 352, 316, 44, { inPanel: false, type: 'password', disabled: state.verifying });
+      item('login', state.verifying ? 'Signing in…' : 'Sign In', 442, 430, 316, 44,
+        { inPanel: false, selected: true, disabled: state.verifying });
+      item('power-menu', 'Power options', canvas.width - 52, 0, 44, barHeight,
+        { inPanel: false, icon: 'system-shutdown', iconOnly: true });
+    } else {
+      // The bar, panels and hit regions share fixed desktop coordinates.
+      item('clock', clock, (canvas.width - 140) / 2, 0, 140, barHeight, { inPanel: false });
+      item('settings', 'Quick settings', canvas.width - 84, 0, 76, barHeight, { inPanel: false });
+    }
     if (!panel) return;
+    if (panel === 'power') {
+      const actions = state.phase === 'desktop' ? ['logout', 'restart', 'shutdown'] : ['restart', 'shutdown'];
+      panelBox = { x: canvas.width - 258, y: barHeight + 8, w: 250, h: 24 + actions.length * 44 };
+      actions.forEach((id, index) => item(id, { logout: 'Log Out', restart: 'Restart', shutdown: 'Power Off' }[id],
+        panelBox.x + 12, panelBox.y + 12 + index * 44, 226, 44,
+        { align: 'left', icon: { logout: 'system-log-out', restart: 'system-reboot', shutdown: 'system-shutdown' }[id] }));
+      return;
+    }
     const w = 360;
     panelBox = { x: panel === 'calendar' ? (canvas.width - w) / 2 : canvas.width - w - 8, y: barHeight + 8, w,
       h: panel === 'calendar' ? 384 : expanded && wifi ? 324 : 236 };
@@ -110,7 +135,8 @@ export function createScreen() {
       }
       item('today', 'Today', x, y + 328, inner);
     } else {
-      item('battery', '82% · Discharging', x, y + 12, inner, 28, { type: 'text', icon: 'battery-level-80', align: 'left' });
+      item('battery', '82% · Discharging', x, y + 12, inner - 48, 28, { type: 'text', icon: 'battery-level-80', align: 'left' });
+      item('power-menu', 'Power options', x + inner - 44, y + 4, 44, 44, { icon: 'system-shutdown', iconOnly: true });
       item('volume-label', `Volume · ${volume}%`, x, y + 44, inner, 24, { type: 'text', align: 'left', muted: true });
       item('mute', volume ? 'Mute sound' : 'Unmute sound', x, y + 68, 44, 44, { icon: volumeIcon(), iconOnly: true });
       item('volume', 'Volume', x + 52, y + 68, inner - 52, 44, { type: 'range' });
@@ -142,15 +168,29 @@ export function createScreen() {
   function drawItem(entry) {
     const box = entry;
     const activeTrigger = panel === 'calendar' ? 'clock' : panel === 'system' ? 'settings' : null;
-    if (entry.type === 'button' && (entry.inPanel || entry.id === activeTrigger || hover === entry.id)) rounded(box, entry.selected ? '#3b5f89' : hover === entry.id ? '#ffffff20' : '#ffffff0b');
-    if (entry.today || focused === entry.id) {
+    if (entry.type === 'button' && (entry.inPanel || entry.selected || entry.id === activeTrigger || hover === entry.id)) rounded(box, entry.selected ? '#3b5f89' : hover === entry.id ? '#ffffff20' : '#ffffff0b');
+    if (entry.today || (focused === entry.id && entry.type !== 'password')) {
       context.strokeStyle = '#b8c9ef';
       context.lineWidth = focused === entry.id ? 2 : 1;
       context.beginPath();
       context.roundRect(box.x + 3, box.y + 3, box.w - 6, box.h - 6, 8);
       context.stroke();
     }
-    if (entry.id === 'settings') {
+    if (entry.type === 'password') {
+      rounded(box, '#101624d9', 9);
+      context.font = '16px "Segoe UI", Arial, sans-serif';
+      context.fillStyle = '#c5cee0';
+      context.textAlign = 'left';
+      const length = controls.get('password')?.value?.length || 0;
+      context.fillText(length ? '•'.repeat(Math.min(length, 24)) : 'Password', box.x + 14, box.y + box.h / 2, box.w - 28);
+      if (focused === entry.id) {
+        context.strokeStyle = '#b8c9ef';
+        context.lineWidth = 2;
+        context.beginPath();
+        context.roundRect(box.x + 1, box.y + 1, box.w - 2, box.h - 2, 9);
+        context.stroke();
+      }
+    } else if (entry.id === 'settings') {
       const names = [wifiIcon(), volumeIcon(), 'battery-level-80'];
       if (names.some(iconFailed)) {
         context.font = '600 14px "Segoe UI", Arial, sans-serif';
@@ -172,7 +212,7 @@ export function createScreen() {
         context.font = '12px "Segoe UI", Arial, sans-serif';
         context.fillStyle = '#e8edf7';
         context.textAlign = 'center';
-        context.fillText({ previous: 'Prev', next: 'Next', mute: 'Sound', networks: 'More' }[entry.id], box.x + box.w / 2, box.y + box.h / 2, box.w - 8);
+        context.fillText({ previous: 'Prev', next: 'Next', mute: 'Sound', networks: 'More', 'power-menu': 'Power' }[entry.id], box.x + box.w / 2, box.y + box.h / 2, box.w - 8);
       }
       if (!entry.iconOnly) {
         context.fillStyle = entry.muted ? '#a5afc0' : '#e8edf7';
@@ -187,14 +227,56 @@ export function createScreen() {
     context.setTransform(1, 0, 0, 1, 0, 0);
     context.drawImage(wallpaper, 0, 0);
     context.textBaseline = 'middle';
-    context.fillStyle = '#101624f0';
-    context.fillRect(0, 0, canvas.width, barHeight);
-    context.fillStyle = '#ffffff16';
-    context.fillRect(0, barHeight - 1, canvas.width, 1);
-    context.fillStyle = '#e8edf7';
-    context.font = '600 14px "Segoe UI", Arial, sans-serif';
-    context.textAlign = 'left';
-    context.fillText('venxe', 16, barHeight / 2);
+    const state = system.state;
+    if (state.phase !== 'desktop') {
+      context.fillStyle = state.phase === 'off' ? '#000000' : '#0d1329c9';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      if (state.phase === 'login') {
+        context.fillStyle = '#e8edf7';
+        context.textAlign = 'center';
+        context.font = '300 52px "Segoe UI", Arial, sans-serif';
+        context.fillText(today.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }), 600, 160);
+        context.font = '15px "Segoe UI", Arial, sans-serif';
+        context.fillStyle = '#b8c9df';
+        context.fillText(fullDate(today), 600, 207);
+        rounded({ x: 410, y: 252, w: 380, h: 256 }, '#202b3ee8', 22);
+        context.fillStyle = '#e8edf7';
+        context.font = '600 25px "Segoe UI", Arial, sans-serif';
+        context.fillText('venxe', 600, 297);
+        context.fillStyle = '#a5afc0';
+        context.font = '13px "Segoe UI", Arial, sans-serif';
+        context.fillText(state.reason === 'locked' ? 'Welcome back' : 'Sign in to your workspace', 600, 325);
+        context.fillStyle = '#efb2b8';
+        context.font = '12px "Segoe UI", Arial, sans-serif';
+        context.fillText(state.error, 600, 410, 330);
+      } else if (state.phase !== 'off') {
+        context.textAlign = 'center';
+        context.fillStyle = '#e8edf7';
+        context.font = '600 38px "Segoe UI", Arial, sans-serif';
+        context.fillText('venxe', 600, 291);
+        context.font = '15px "Segoe UI", Arial, sans-serif';
+        context.fillStyle = '#b8c9df';
+        context.fillText({ booting: 'Starting up…', 'shutting-down': state.restarting ? 'Restarting…' : 'Shutting down…',
+          'signing-out': 'Signing out…', 'signing-in': 'Welcome back' }[state.phase], 600, 344);
+        if (!state.reducedMotion) {
+          context.strokeStyle = '#b8c9ef';
+          context.lineWidth = 2;
+          context.beginPath();
+          const angle = now / 220;
+          context.arc(600, 394, 10, angle, angle + Math.PI * 1.4);
+          context.stroke();
+        }
+      }
+    } else {
+      context.fillStyle = '#101624f0';
+      context.fillRect(0, 0, canvas.width, barHeight);
+      context.fillStyle = '#ffffff16';
+      context.fillRect(0, barHeight - 1, canvas.width, 1);
+      context.fillStyle = '#e8edf7';
+      context.font = '600 14px "Segoe UI", Arial, sans-serif';
+      context.textAlign = 'left';
+      context.fillText('venxe', 16, barHeight / 2);
+    }
     items.filter((entry) => !entry.inPanel).forEach(drawItem);
     if (panelBox) {
       context.save();
@@ -226,7 +308,7 @@ export function createScreen() {
   }
   function closePanel(restoreFocus = true) {
     if (!panel) return false;
-    const trigger = panel === 'calendar' ? 'clock' : 'settings';
+    const trigger = system.state.phase === 'login' ? 'power-menu' : panel === 'calendar' ? 'clock' : 'settings';
     panel = null;
     expanded = false;
     gesture = null;
@@ -254,7 +336,25 @@ export function createScreen() {
     announce(fullDate(selected));
   }
   function activate(id) {
-    if (disposed) return;
+    if (disposed || (!items.some((entry) => entry.id === id && !entry.disabled) && id !== 'dismiss')) return;
+    if (id === 'password') { controls.get('password')?.focus({ preventScroll: true }); return; }
+    if (id === 'login') { submitLogin(); return; }
+    if (['shutdown', 'restart', 'logout'].includes(id)) {
+      closePanel(false);
+      system.send(id);
+      update();
+      return;
+    }
+    if (id === 'power-menu') {
+      if (panel === 'power') { closePanel(); return; }
+      closePanel(false);
+      panel = 'power';
+      announce('Power options open.');
+      dirty = true;
+      refreshControls();
+      controls.get(system.state.phase === 'desktop' ? 'logout' : 'restart')?.focus({ preventScroll: true });
+      return;
+    }
     if (id === 'clock' || id === 'settings') {
       const next = id === 'clock' ? 'calendar' : 'system';
       if (panel === next) { closePanel(); return; }
@@ -331,6 +431,8 @@ export function createScreen() {
     if (!root) return;
     root.querySelector('[data-panel="calendar"]').hidden = panel !== 'calendar';
     root.querySelector('[data-panel="system"]').hidden = panel !== 'system';
+    root.querySelector('[data-panel="power"]').hidden = panel !== 'power';
+    root.querySelector('[data-login]').hidden = system.state.phase !== 'login';
     for (const [id, element] of controls) {
       const entry = items.find((entry) => entry.id === id);
       element.hidden = !entry;
@@ -338,7 +440,12 @@ export function createScreen() {
       if (id === 'volume') {
         element.value = String(volume);
         element.setAttribute('aria-valuetext', volume ? `${volume}%` : 'Muted');
-      } else if (element.textContent !== entry.label) element.textContent = entry.label;
+      } else if (entry.type !== 'password' && element.textContent !== entry.label) element.textContent = entry.label;
+      if (id === 'password') {
+        element.setAttribute('aria-invalid', String(!!system.state.error));
+        root.querySelector('[data-login-error]').textContent = system.state.error;
+      }
+      if (id === 'power-menu') element.setAttribute('aria-expanded', String(panel === 'power'));
       if (entry.date) {
         element.setAttribute('aria-label', fullDate(entry.date));
         element.setAttribute('aria-pressed', String(entry.selected));
@@ -370,8 +477,17 @@ export function createScreen() {
     for (const element of root.querySelectorAll('[data-control]')) {
       const id = element.dataset.control;
       controls.set(id, element);
-      if (element.tagName !== 'BUTTON' && element.type !== 'range') continue;
+      if (element.tagName !== 'BUTTON' && !['range', 'password'].includes(element.type)) continue;
       const options = { signal };
+      if (element.type === 'password') {
+        element.addEventListener('input', () => { dirty = true; }, options);
+        element.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') { event.preventDefault(); submitLogin(); }
+        }, options);
+        element.addEventListener('focus', () => { focused = id; dirty = true; }, options);
+        element.addEventListener('blur', () => { if (focused === id) { focused = null; dirty = true; } }, options);
+        continue;
+      }
       element.addEventListener(element.type === 'range' ? 'input' : 'click', () => {
         if (disposed || !root || root.hidden || document.hidden) return;
         if (id === 'volume') { setVolume(element.value); refreshControls(); }
@@ -394,9 +510,57 @@ export function createScreen() {
     }
     syncControls();
   }
+  async function submitLogin() {
+    const input = controls.get('password');
+    if (!input || !root || root.hidden || document.hidden || system.state.phase !== 'login' || system.state.verifying) return;
+    if (!input.value) { input.focus({ preventScroll: true }); return; }
+    const result = system.send('login', input.value);
+    input.value = '';
+    dirty = true;
+    refreshControls();
+    await result;
+    if (disposed) return;
+    update();
+    if (system.state.phase === 'login' && !root.hidden && !document.hidden) input.focus({ preventScroll: true });
+  }
   function update(time = Date.now()) {
     if (disposed) return;
     now = time;
+    const state = system.state;
+    if (lastClosed !== state.closed) {
+      lastClosed = state.closed;
+      if (state.closed) {
+        closePanel(false);
+        const password = controls.get('password');
+        if (password) password.value = '';
+        dirty = true;
+      }
+    }
+    if (lastPhase !== state.phase || lastError !== state.error || lastVerifying !== state.verifying) {
+      if (lastPhase !== state.phase) {
+        closePanel(false);
+        gesture = null;
+        hover = null;
+        focused = null;
+        const password = controls.get('password');
+        if (password) password.value = '';
+        lastPhase = state.phase;
+        refreshControls();
+        if (state.phase === 'login' && root && !root.hidden) password?.focus({ preventScroll: true });
+        else if (state.phase === 'desktop' && root && !root.hidden) controls.get('settings')?.focus({ preventScroll: true });
+        announce({ desktop: 'Signed in.', login: 'Enter your password to sign in.', off: 'Computer powered off. Use the power key to start up.',
+          booting: 'Starting up.', 'shutting-down': state.restarting ? 'Restarting.' : 'Shutting down.',
+          'signing-out': 'Signing out.', 'signing-in': 'Signing in.' }[state.phase]);
+      }
+      if (state.error && state.error !== lastError) announce(state.error);
+      lastError = state.error;
+      lastVerifying = state.verifying;
+      dirty = true;
+    }
+    if (!['desktop', 'login', 'off'].includes(state.phase) && !state.reducedMotion && Math.floor(now / 50) !== animationFrame) {
+      animationFrame = Math.floor(now / 50);
+      dirty = true;
+    }
     if (Math.floor(now / 60000) !== minute) {
       minute = Math.floor(now / 60000);
       today = new Date(now);
@@ -415,6 +579,7 @@ export function createScreen() {
     disposed = true;
     imageEvents.abort();
     gesture = null;
+    if (controls.has('password')) controls.get('password').value = '';
     controls.clear();
     icons.clear();
     root = null;
