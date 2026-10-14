@@ -49,6 +49,14 @@ assert.ok(test.root.querySelectorAll('[data-control]').some(element => /29 Febru
 test.desktop.closePanel();
 assert.equal(document.activeElement, test.control('dashboard'));
 test.click('utilities');
+test.control('volume').focus(); test.update();
+const volumeBoxes = test.surface.boxes.filter(box => box.w > 100 && test.desktop.hitTest(test.uv(box.x + box.w / 2, box.y + box.h / 2)) === 'volume');
+const volumeTrack = volumeBoxes.find(box => box.h === 30);
+const volumeOutline = volumeBoxes.find(box => box.h > volumeTrack.h);
+assert.ok(volumeOutline.x < volumeTrack.x && volumeOutline.y < volumeTrack.y
+  && volumeOutline.x + volumeOutline.w > volumeTrack.x + volumeTrack.w
+  && volumeOutline.y + volumeOutline.h > volumeTrack.y + volumeTrack.h,
+  'The volume focus outline must surround the visible track without overlapping its fill');
 test.control('volume').value = '22'; test.control('volume').dispatchEvent(new Event('input')); test.update();
 assert.equal(test.control('volume').value, '22');
 test.click('mute'); assert.equal(test.control('volume').value, '0');
@@ -78,6 +86,17 @@ test.click('session'); test.click('logout'); test.update(start + 100000000350);
 assert.equal(system.state.phase, 'login');
 assert.equal(test.control('unlock').hidden, false);
 assert.ok(test.surface.labels.some(label => /Good (morning|afternoon|evening)/.test(label.text)));
+for (const hour of [0, 8, 15]) {
+  test.update(new Date(2026, 9, 13, hour).getTime());
+  const welcome = test.surface.labels.find(label => /^Good /.test(label.text));
+  const username = test.surface.labels.find(label => label.text === 'venxe');
+  const context = test.surface.getContext('2d');
+  const width = label => context.measureText(label.text).width;
+  const left = label => label.x - (label.align === 'right' ? width(label) : label.align === 'center' ? width(label) / 2 : 0);
+  assert.equal((left(welcome) + left(username) + width(username)) / 2, test.surface.width / 2,
+    'The complete greeting and username must remain centered for every time-of-day greeting');
+}
+test.update(start + 100000000350);
 assert.equal(test.desktop.handleKey({ key: 'Tab' }), false);
 assert.equal(test.desktop.handleKey({ key: 'x' }), true); test.update();
 assert.equal(test.control('password').value, '', 'The welcome key is not a password character');

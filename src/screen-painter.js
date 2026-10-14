@@ -88,6 +88,7 @@ export function createScreenPainter(canvas, assets) {
   function item(e, { shell, focused, hover, today }) {
     if (e.invisible || e.type === 'password') return;
     const hot = focused === e.id || hover === e.id;
+    const track = e.type === 'range' ? { x: e.x, y: e.y + (e.h - 30) / 2, w: e.w, h: 30 } : null;
     if (e.image) {
       d.image(assets.get(WALLPAPERS[Number(e.id.slice(10))]), e, 16); d.rect({ x: e.x, y: e.y + e.h - 36, w: e.w, h: 36 }, '#0d0e12d9', 12); d.text(e.label, e.x + 12, e.y + e.h - 18, 12, T.text, 500, 'left', FONTS.body, e.w - 24);
     } else if (e.workspace) {
@@ -96,7 +97,9 @@ export function createScreenPainter(canvas, assets) {
     } else if (e.clock) {
       const [hours, minutes] = timeLabel(today).split(':'); d.icon('calendar_month', 30, e.y + 12, 17, T.tertiary); d.text(hours, 30, e.y + 39, 23, T.tertiary, 500, 'center', FONTS.clock); d.text(minutes, 30, e.y + 64, 23, T.tertiary, 500, 'center', FONTS.clock);
     } else if (e.type === 'range') {
-      d.rect({ x: e.x, y: e.y + 7, w: e.w, h: 30 }, T.variant, 15); d.rect({ x: e.x, y: e.y + 7, w: Math.max(30, e.w * e.value / 100), h: 30 }, T.secondary, 15); d.text(`${e.value}%`, e.x + e.w - 12, e.y + 22, 11, T.text, 500, 'right');
+      d.rect(track, T.variant, track.h / 2);
+      d.rect({ ...track, w: Math.max(track.h, track.w * e.value / 100) }, T.secondary, track.h / 2);
+      d.text(`${e.value}%`, track.x + track.w - 12, track.y + track.h / 2, 11, T.text, 500, 'right');
     } else if (e.type === 'search') {
       d.rect(e, T.surface, 28); d.icon('search', e.x + 27, e.y + 28, 23); d.text(shell.query || 'Search apps and actions…', e.x + 54, e.y + 28, 16, shell.query ? T.text : T.muted);
     } else {
@@ -108,7 +111,13 @@ export function createScreenPainter(canvas, assets) {
         if (!iconOnly) { d.text(e.label, e.x + 51, e.y + e.h / 2 - (e.detail ? 9 : 0), e.id.startsWith('app-') ? 16 : 12, T.text, 500, 'left', FONTS.body, e.w - 62); if (e.detail) d.text(e.detail, e.x + 51, e.y + e.h / 2 + 12, 11, T.muted, 400, 'left', FONTS.body, e.w - 62); }
       } else d.text(e.label, e.x + e.w / 2, e.y + e.h / 2, e.date ? 12 : 13, e.date && e.selected ? T.background : e.muted ? T.muted : T.text, e.selected ? 600 : 400, 'center');
     }
-    if (focused === e.id || e.image && e.selected) { context.strokeStyle = T.accent; context.lineWidth = 2; context.beginPath(); context.roundRect(e.x + 2, e.y + 2, e.w - 4, e.h - 4, 14); context.stroke(); }
+    if (focused === e.id || e.image && e.selected) {
+      const outline = track
+        ? { x: track.x - 3, y: track.y - 3, w: track.w + 6, h: track.h + 6 }
+        : { x: e.x + 2, y: e.y + 2, w: e.w - 4, h: e.h - 4 };
+      context.strokeStyle = T.accent; context.lineWidth = 2; context.beginPath();
+      context.roundRect(outline.x, outline.y, outline.w, outline.h, track ? outline.h / 2 : 14); context.stroke();
+    }
   }
   return function paint(frame) {
     const { state, shell, layout, now } = frame;

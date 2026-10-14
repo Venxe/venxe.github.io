@@ -27,10 +27,20 @@ export function createLoginPainter(context, assets) {
     const { state, shell, today, revealed, revealProgress, passwordLength, now, focused, hover } = frame;
     const locked = state.phase === 'locked';
     if (!locked && !revealed) {
-      const greetingText = greeting(today);
-      d.rect({ x: 221, y: 271, w: 758, h: 133 }, '#0d0e12b8', 32);
-      d.text(greetingText, 573, 337, 58, T.text, 500, 'right');
-      d.text(DEMO.user, 593, 337, 58, T.accent, 500);
+      const greetingText = `${greeting(today)} `;
+      const box = { x: 221, y: 271, w: 758, h: 133 };
+      const size = 58;
+      context.font = `500 ${size}px "${FONTS.body}", sans-serif`;
+      context.textBaseline = 'middle';
+      const greetingMetrics = context.measureText(greetingText);
+      const userMetrics = context.measureText(DEMO.user);
+      const x = box.x + (box.w - greetingMetrics.width - userMetrics.width) / 2;
+      const ascent = Math.max(greetingMetrics.actualBoundingBoxAscent || 0, userMetrics.actualBoundingBoxAscent || 0);
+      const descent = Math.max(greetingMetrics.actualBoundingBoxDescent || 0, userMetrics.actualBoundingBoxDescent || 0);
+      const y = box.y + box.h / 2 + (ascent - descent) / 2;
+      d.rect(box, '#0d0e12b8', 32);
+      d.text(greetingText, x, y, size, T.text, 500);
+      d.text(DEMO.user, x + greetingMetrics.width, y, size, T.accent, 500);
       return;
     }
     const progress = state.reducedMotion || locked ? 1 : revealProgress;

@@ -29,7 +29,7 @@ export class TestElement extends EventTarget {
       if (key === 'fillRect') return (x, y, w, h) => {
         if (x === 0 && y === 0 && w === this.width && h === this.height) { this.labels.length = 0; this.images.length = 0; this.boxes.length = 0; this.arcs.length = 0; }
       };
-      if (key === 'fillText') return (text, x, y) => this.labels.push({ text, x: x * scale, y: y * scale });
+      if (key === 'fillText') return (text, x, y) => this.labels.push({ text, x: x * scale, y: y * scale, align: target.textAlign });
       if (key === 'drawImage') return (image, x, y, w, h) => {
         if (image.tagName === 'CANVAS') { this.labels.length = 0; this.images.length = 0; this.boxes.length = 0; this.arcs.length = 0; }
         else this.images.push({ src: image.src, x: x * scale, y: y * scale, w: w * scale, h: h * scale });
