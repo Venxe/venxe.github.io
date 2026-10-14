@@ -12,8 +12,8 @@
 body { margin: 0; height: 100svh; overflow: hidden; }
 button, a { -webkit-tap-highlight-color: transparent; }
 button { font: inherit; cursor: pointer; }
-button:focus-visible, a:focus-visible, canvas:focus-visible { outline: 2px solid var(--accent); outline-offset: 5px; }
-canvas:focus-visible { outline-offset: -4px; }
+button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 5px; }
+canvas:focus { outline: none; }
 [hidden] { display: none !important; }
 .masthead { position: fixed; top: calc(24px + env(safe-area-inset-top)); left: calc(24px + env(safe-area-inset-left)); z-index: 1; pointer-events: none; }
 .wordmark { color: inherit; font-size: 24px; font-weight: 750; letter-spacing: -1.5px; text-decoration: none; pointer-events: auto; }
